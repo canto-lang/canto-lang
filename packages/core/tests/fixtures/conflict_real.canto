@@ -1,0 +1,16 @@
+"""
+Test case: REAL conflict - conditions can overlap.
+Both rules use the SAME category, so both can fire simultaneously.
+The analyzer SHOULD warn about this.
+"""
+
+// Same category used by multiple rules - real conflict
+?food_terms resembles "pizza", "burger", "pasta", "salad"
+
+?input meaning "the user input"
+
+// Both rules check the same category - if input matches food_terms, BOTH fire
+?result can be "option_a", "option_b"
+
+?result becomes "option_a" when ?input is like ?food_terms
+?result becomes "option_b" when ?input is like ?food_terms

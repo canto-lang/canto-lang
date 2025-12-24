@@ -1,0 +1,17 @@
+"""
+Test case: FALSE POSITIVE conflict - conditions are mutually exclusive.
+Rules use DIFFERENT categories, so only one can fire at a time.
+The analyzer should NOT warn about this (but currently does).
+"""
+
+// Different categories - mutually exclusive
+?fruit_terms resembles "apple", "orange", "banana", "grape"
+?vehicle_terms resembles "car", "truck", "bike", "bus"
+
+?input meaning "the user input"
+
+// Different categories - only one rule can fire for any given input
+?result can be "fruit", "vehicle"
+
+?result becomes "fruit" when ?input is like ?fruit_terms
+?result becomes "vehicle" when ?input is like ?vehicle_terms

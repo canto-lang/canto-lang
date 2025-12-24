@@ -1,0 +1,40 @@
+"""
+Identify and extract entities from financial news text.
+
+- Extract all relevant entities as a list of strings, preserving the wording from the text
+- Use None if no entities are found in that category
+- Only extract entities explicitly mentioned in the text, do not infer from URLs, domain names, or indirect references
+- Extract individual items rather than compound or ranged entities
+"""
+
+?text meaning "the financial news text to analyze"
+
+?company resembles "Apple Inc.", "Uber", "Bank of America"
+    meaning "official or unofficial name of a registered company or brand"
+
+?date resembles "June 2nd, 2010", "quarter ended 2021", "last week", "prior year", "Wednesday"
+    meaning "specific time period, explicit or implicit, in past, present, or future"
+
+?location resembles "California", "Paris", "1280 W 12th Blvd", "Americas", "Europe"
+    meaning "geographical location such as political region, country, state, city, road, even as adjective"
+
+?money resembles "$76.3 million", "$4 Bn", "Rs 33.80 crore", "1.2 BTC"
+    meaning "monetary value in any world currency, including digital currencies"
+
+?person resembles "Meg Whitman", "Mr. Baker", "Warren Buffet"
+    meaning "name of an individual"
+
+?product resembles "iPhone", "Tesla model X", "cloud services", "Microsoft Windows 10", "laptops", "medical equipment", "computer software", "online classes", "eye surgery"
+    meaning "physical object or service provided by a company to consumers, excluding business or sector references"
+
+?quantity resembles "15%", "25,000 units", "2.75in", "100 tons"
+    meaning "numeric value not categorized as money, including unit of measurement"
+
+?entities meaning "extracted entities from the text" from ?text with
+    ?companies has a list of ?company
+    ?dates has a list of ?date
+    ?locations has a list of ?location
+    ?money_values has a list of ?money
+    ?persons has a list of ?person
+    ?products has a list of ?product
+    ?quantities has a list of ?quantity

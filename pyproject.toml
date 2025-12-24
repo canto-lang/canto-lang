@@ -1,0 +1,18 @@
+[project]
+name = "canto"
+version = "0.0.1"
+description = "Canto DSL - an embedded domain specific neurosymbolic language with defeasible logic programming capabilities"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+canto-core = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["packages/core/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

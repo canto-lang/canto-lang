@@ -1,0 +1,177 @@
+// Canto DSL Grammar
+
+?start: program
+
+program: [instructions] import_statement* statement*
+
+// Instructions block (triple-quoted string at the top of the file)
+// These are passed to prompt generation as guidance
+instructions: INSTRUCTIONS
+
+// Import statement: import module_name
+import_statement: "import" IDENTIFIER
+
+?statement: pattern_declaration
+          | has_declaration
+          | predicate
+
+// Pattern declarations (resembles)
+// Example: ?fraud_risk resembles "identity theft", "suspicious activity" meaning "indicators of fraud"
+pattern_declaration: VARIABLE "resembles" pattern_items ["meaning" description]
+
+pattern_items: string_literal ("," string_literal)*
+
+// Has declarations (structural relationships)
+// Example: ?patient has a ?diagnosis meaning "the diagnosis assigned"
+// Example: ?patient has a list of ?medications meaning "current medications"
+// Example: ?entities has a list of ?company from ?text
+has_declaration: VARIABLE "has" "a" "list" "of" VARIABLE "from" VARIABLE [with_block]  -> has_list_from_declaration
+               | VARIABLE "has" "a" "list" "of" VARIABLE ["meaning" description]       -> has_list_declaration
+               | VARIABLE "has" "a" VARIABLE ["meaning" description]                   -> has_single_declaration
+
+// With blocks for nested structure definitions (explicit end marker)
+with_block: "with" with_item+ "end"
+
+with_item: VARIABLE "meaning" description ["from" VARIABLE] [with_block]         -> with_freetext
+         | VARIABLE "can" "be" enum_values ["meaning" description] [with_block] -> with_enum
+         | VARIABLE "has" "a" "list" "of" VARIABLE "from" VARIABLE              -> with_has_list_from
+         | VARIABLE "has" "a" "list" "of" VARIABLE ["meaning" description]      -> with_has_list
+         | VARIABLE "has" "a" VARIABLE ["meaning" description]                  -> with_has_single
+         | VARIABLE with_block                                                  -> with_nested
+
+// Predicates - variable definitions and rules
+predicate: freetext_variable
+         | enum_variable
+         | assignment_predicate
+
+// Freetext variable: ?var meaning "description" [from ?source] [with ...]
+freetext_variable: VARIABLE "meaning" description ["from" VARIABLE] [with_block]
+
+// Enum variable: ?var can be "a", "b", "c" meaning "description" [with ...]
+enum_variable: VARIABLE "can" "be" enum_values ["meaning" description] [with_block]
+
+// Enum values: can be strings, true, or false (comma-separated)
+enum_values: enum_value ("," enum_value)*
+
+enum_value: string_literal | BOOLEAN
+
+// Assignment predicate: [normally] ?var [of ?parent] becomes value [when ...] [unless ...] [overriding ...]
+assignment_predicate: predicate_head predicate_body
+
+predicate_head: variable_ref BECOMES predicate_value
+              | predicate_priority variable_ref BECOMES predicate_value
+
+BECOMES: "becomes"
+
+predicate_priority: "normally"
+
+predicate_value: boolean
+               | string_literal
+               | VARIABLE
+               | number
+
+predicate_body: [when_clause] [unless_clause] [override_clause]
+
+when_clause: "when" conditions
+
+unless_clause: "unless" conditions
+
+override_clause: "overriding" override_target
+
+OVERRIDE_ALL: "all"
+OVERRIDE_NORMAL: "normal"
+
+override_target: OVERRIDE_ALL | OVERRIDE_NORMAL
+
+// Conditions
+conditions: condition (logic_op condition)*
+
+condition: length_condition
+         | variable_ref IS_LIKE_OP operand
+         | variable_ref HAS_OP quantified_check  -> has_quantified
+         | variable_ref HAS_OP operand           -> has_simple
+         | variable_ref IS_OP operand
+         | variable_ref COMPARE_OP number        -> comparison_condition
+         | NOT_WARRANTED_OP condition            -> not_warranted_condition
+         | NOT_OP condition                      -> not_condition
+         | "(" conditions ")"
+
+// Length of condition: (length of ?list where ?prop is value) is N / > N
+// Parentheses required for clarity
+// First VARIABLE/variable_ref is the list, second VARIABLE is the property to check
+length_condition: "(" "length" "of" variable_ref "where" VARIABLE IS_LIKE_OP operand ")" length_check  -> length_where_like
+                | "(" "length" "of" variable_ref "where" VARIABLE IS_OP operand ")" length_check       -> length_where_is
+
+length_check: COMPARE_OP number -> length_comparison
+            | IS_OP number      -> length_is_number
+
+COMPARE_OP: ">=" | "<=" | ">" | "<"
+
+// Variable reference: either simple (?var) or qualified (?child of ?parent)
+// Supports chained qualification with parentheses: ?child of (?grandchild of ?grandparent)
+variable_ref: VARIABLE "of" "(" variable_ref ")"  -> qualified_variable_nested
+            | VARIABLE "of" VARIABLE              -> qualified_variable
+            | VARIABLE                            -> simple_variable
+
+// Quantified has conditions: has any/all/none that is/is like/is not
+// Also supports: has any that ?property is value
+// NOTE: inline_condition must come first (starts with IS), then property_condition (starts with VARIABLE)
+quantified_check: quantifier inline_condition
+                | quantifier property_condition   -> quantified_property
+
+quantifier: "any" "that"   -> any_quantifier
+          | "all" "that"   -> all_quantifier
+          | "none" "that"  -> none_quantifier
+
+// Property-based condition: ?property is value (starts with VARIABLE)
+property_condition: VARIABLE IS_LIKE_OP operand  -> property_is_like
+                  | VARIABLE IS_OP operand       -> property_is
+
+// Inline condition: is/is like/is not value (starts with IS)
+inline_condition: IS_LIKE_OP operand      -> inline_is_like
+                | IS_OP "not" operand     -> inline_is_not
+                | IS_OP operand           -> inline_is
+
+// IS LIKE must come before IS to match correctly (longer match first)
+IS_LIKE_OP: "is" /\s+/ "like"
+IS_OP: "is"
+HAS_OP: "has"
+// NOT WARRANTED must come before NOT to match correctly
+NOT_WARRANTED_OP: "not" /\s+/ "warranted"
+NOT_OP: "not"
+
+operand: VARIABLE
+       | string_literal
+       | boolean
+       | number
+
+logic_op: AND_OP | OR_OP
+
+AND_OP: "and"
+OR_OP: "or"
+
+// Primitives
+VARIABLE: "?" /[a-z_][a-z0-9_]*/
+IDENTIFIER: /[a-z_][a-z0-9_]*/
+
+BOOLEAN: "true" | "false"
+boolean: BOOLEAN
+
+number: /\d+(\.\d+)?/
+
+description: string_literal
+
+string_literal: /"[^"]*"/
+              | /'[^']*'/
+              | /"""[\s\S]*?"""/
+
+// Whitespace handling
+%import common.WS
+%ignore WS
+
+// Instructions (triple-quoted strings) - captured for prompt generation
+INSTRUCTIONS: /"""[\s\S]*?"""/
+
+// Comments (single-line only) - ignored
+COMMENT: /#[^\n]*/ | /\/\/[^\n]*/
+%ignore COMMENT

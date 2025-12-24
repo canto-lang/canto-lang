@@ -1,0 +1,22 @@
+[project]
+name = "canto-cli"
+version = "0.0.1"
+description = "CLI for Canto DSL - build pipeline for compiling .canto files"
+requires-python = ">=3.12"
+dependencies = [
+    "canto-core",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+canto = "canto_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/canto_cli"]
+
+[tool.uv.sources]
+canto-core = { workspace = true }

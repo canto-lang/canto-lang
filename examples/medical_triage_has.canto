@@ -1,0 +1,42 @@
+"""
+Medical Triage System
+
+Analyzes patient information to determine urgency level and referrals.
+"""
+
+?emergency_symptoms resembles "chest pain", "difficulty breathing", "severe bleeding"
+?urgent_symptoms resembles "high fever", "persistent vomiting", "severe pain"
+?cardiac_terms resembles "heart", "cardiac", "chest pain", "palpitations"
+
+?patient meaning "extracted patient information" with
+    ?name meaning "patient's full name"
+    ?age meaning "patient's age in years"
+    ?chief_complaint meaning "primary reason for visit"
+    ?symptoms with
+        ?text meaning "symptom description"
+        ?is_emergency can be true, false
+    ?medications with
+        ?med_name meaning "medication name"
+        ?dosage meaning "current dosage"
+
+# Determine if each symptom is an emergency based on its text
+?is_emergency of (?symptoms of ?patient) becomes true
+    when ?text of (?symptoms of ?patient) is like ?emergency_symptoms
+
+?urgency can be "emergency", "urgent", "routine"
+
+# Emergency if any symptom is marked as emergency
+?urgency becomes "emergency"
+    when ?symptoms of ?patient has any that ?is_emergency is true
+    overriding all
+
+# Urgent if any symptom matches urgent symptoms
+normally ?urgency becomes "urgent"
+    when ?symptoms of ?patient has any that is like ?urgent_symptoms
+
+# Default to routine
+normally ?urgency becomes "routine"
+
+# Cardiology referral if cardiac-related symptoms
+?referral becomes "cardiology"
+    when ?symptoms of ?patient has any that is like ?cardiac_terms

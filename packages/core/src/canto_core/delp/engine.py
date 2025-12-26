@@ -415,10 +415,9 @@ class JanusDeLP:
         - Contradictory strict rules without resolution
         """
         try:
-            result = self._prolog.query_once("findall(Issue, format_issue_safe(Issue), Issues)")
-            if result and 'Issues' in result:
-                return result['Issues']
-            return []
+            # Use query_all instead of findall due to Janus-SWI bug with findall
+            results = self._prolog.query_all("format_issue_safe(Issue)")
+            return [r['Issue'] for r in results if 'Issue' in r]
         except Exception as e:
             print(f"Failed to get static analysis issues: {e}")
             return []

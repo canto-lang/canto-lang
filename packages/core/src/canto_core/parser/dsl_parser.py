@@ -616,6 +616,8 @@ class CantoTransformer(Transformer):
         """Parse quantified has condition: variable_ref HAS_OP quantified_check
         Example: ?symptoms of ?patient has any that is like ?emergency_symptoms
 
+        For explicit binding with compound conditions, use "let ?x be any in ?coll where ..."
+
         Note: items = [variable_ref, HAS_OP token, quantified_check]
         """
         var_ref = items[0]
@@ -783,6 +785,101 @@ class CantoTransformer(Transformer):
     def none_quantifier(self, items):
         """Parse 'none that' quantifier"""
         return "NONE"
+
+    # ============ BOUND CONDITIONS (used by let binding) ============
+
+    def bound_conditions(self, items):
+        """Parse compound bound conditions: bound_condition bound_continuation*
+        Returns list of conditions with operators
+        """
+        conditions = []
+
+        for item in items:
+            if isinstance(item, dict):
+                conditions.append(item)
+            elif isinstance(item, list):
+                # bound_continuation returns [logic_op, condition]
+                conditions.extend(item)
+
+        return conditions
+
+    def bound_and_cont(self, items):
+        """Parse 'and bound_condition' continuation"""
+        # items[0] is 'and' token, items[1] is the bound_condition
+        cond = items[1] if len(items) > 1 else items[0]
+        if isinstance(cond, dict):
+            cond["logic_op"] = "AND"
+        return [cond]
+
+    def bound_or_cont(self, items):
+        """Parse 'or bound_condition' continuation"""
+        # items[0] is 'or' token, items[1] is the bound_condition
+        cond = items[1] if len(items) > 1 else items[0]
+        if isinstance(cond, dict):
+            cond["logic_op"] = "OR"
+        return [cond]
+
+    # ============ LET BINDING FOR QUANTIFIED CONDITIONS ============
+
+    def let_condition(self, items):
+        """Parse let binding condition: let ?var be any/all/none in collection where conditions
+        Example: let ?link be any in ?chain where ?speaker of ?link is ?target
+
+        items = [VARIABLE, let_quantifier, variable_ref, bound_conditions]
+        """
+        binding = items[0]  # The binding variable (e.g., ?link)
+        quantifier = items[1]  # "ANY", "ALL", "NONE"
+        collection = items[2]  # The collection variable_ref
+        conditions = items[3]  # List of bound conditions
+
+        # Handle qualified vs simple collection reference
+        if isinstance(collection, tuple):
+            child, parent = collection
+            var = {"child": child, "parent": parent}
+        else:
+            var = collection
+
+        operator = f"LET_{quantifier}_BOUND"
+
+        return Condition(
+            operator=operator,
+            left=var,
+            right={
+                "binding": binding,
+                "conditions": conditions
+            }
+        )
+
+    def let_any(self, items):
+        """Parse 'any' quantifier in let binding"""
+        return "ANY"
+
+    def let_all(self, items):
+        """Parse 'all' quantifier in let binding"""
+        return "ALL"
+
+    def let_none(self, items):
+        """Parse 'none' quantifier in let binding"""
+        return "NONE"
+
+    def bound_is(self, items):
+        """Parse bound is condition: variable_ref IS_OP operand"""
+        left = items[0]
+        # items[1] is IS_OP token
+        right = items[2] if len(items) > 2 else items[1]
+        return {"condition_type": "IS", "left": left, "right": right}
+
+    def bound_is_like(self, items):
+        """Parse bound is like condition: variable_ref IS_LIKE_OP operand"""
+        left = items[0]
+        # items[1] is IS_LIKE_OP token
+        right = items[2] if len(items) > 2 else items[1]
+        return {"condition_type": "IS_LIKE", "left": left, "right": right}
+
+    def bound_grouped(self, items):
+        """Parse grouped bound conditions: ( bound_conditions )"""
+        # items[0] is the bound_conditions result (list of conditions)
+        return {"grouped": True, "conditions": items[0]}
 
     def inline_is_like(self, items):
         """Parse inline 'is like' condition

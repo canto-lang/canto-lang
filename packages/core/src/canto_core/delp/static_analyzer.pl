@@ -342,6 +342,12 @@ is_builtin_predicate(has_none_like).
 is_builtin_predicate(has_none_eq).
 is_builtin_predicate(has_none_neq).
 is_builtin_predicate(has_any_property_is).
+% Variable equality
+is_builtin_predicate(var_equals).
+% Let binding quantified (compound conditions)
+is_builtin_predicate(let_any_bound).
+is_builtin_predicate(let_all_bound).
+is_builtin_predicate(let_none_bound).
 % Length/count predicates
 is_builtin_predicate(length_where_like_eq).
 is_builtin_predicate(length_where_like_gt).

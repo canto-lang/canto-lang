@@ -291,6 +291,10 @@ class DeLPTranslator:
             right = self._format_value(condition.right)
             return [f"has_none_neq({left}, {right})"]
 
+        # Let binding quantified conditions: let ?var be any/all/none in ?collection where conditions
+        elif condition.operator in ("LET_ANY_BOUND", "LET_ALL_BOUND", "LET_NONE_BOUND"):
+            return self._translate_let_bound(condition)
+
         elif condition.operator == "IS_LIKE":
             # Semantic similarity: is_like(var, pattern) - for LLM-interpreted matching
             left = self._format_variable(condition.left)
@@ -301,7 +305,13 @@ class DeLPTranslator:
             # Variable equality/assignment check
             left = self._format_variable(condition.left)
             right = self._format_value(condition.right)
-            return [f"{left}({right})"]
+            # If right side is also a variable reference, use equality check
+            if self._is_variable_ref(condition.right):
+                # Variable-to-variable comparison: check if both have same value
+                return [f"var_equals({left}, {right})"]
+            else:
+                # Variable-to-value check: left(value)
+                return [f"{left}({right})"]
 
         # LENGTH_WHERE conditions: (length of ?list where ?prop is/is_like value) comparison
         elif condition.operator.startswith("LENGTH_WHERE_"):
@@ -358,16 +368,84 @@ class DeLPTranslator:
         predicate = f"length_where_{cond_type}_{cmp_type}({list_str}, {prop_str}, {filter_str}, {cmp_str})"
         return [predicate]
 
+    def _translate_let_bound(self, condition: Condition) -> List[str]:
+        """
+        Translate let binding quantified conditions with explicit binding and compound conditions.
+
+        Example DSL:
+            let ?link be any in ?chain where
+                ?speaker of ?link is ?target
+                and ?speaker_is_truthful of ?link is true
+
+        Condition structure:
+        - operator: LET_ANY_BOUND, LET_ALL_BOUND, or LET_NONE_BOUND
+        - left: collection variable (e.g., chain_of_puzzle)
+        - right: {
+            "binding": "?link",
+            "conditions": [
+                {"condition_type": "IS", "left": ("?speaker", "?link"), "right": "?target"},
+                {"condition_type": "IS", "left": ("?speaker_is_truthful", "?link"), "right": true, "logic_op": "AND"}
+            ]
+          }
+
+        Generates: let_any_bound(collection, binding, [cond1, cond2, ...])
+        Each condition is translated to a Prolog term.
+        """
+        # Determine quantifier type: any, all, none
+        if condition.operator == "LET_ANY_BOUND":
+            quantifier = "any"
+        elif condition.operator == "LET_ALL_BOUND":
+            quantifier = "all"
+        else:  # LET_NONE_BOUND
+            quantifier = "none"
+
+        # Format collection variable
+        collection = self._format_variable(condition.left)
+
+        # Get binding and conditions from right side
+        right_data = condition.right
+        binding = self._strip_prefix(right_data["binding"])
+        bound_conditions = right_data["conditions"]
+
+        # Translate each bound condition to a Prolog term
+        prolog_conditions = []
+        for cond in bound_conditions:
+            cond_type = cond["condition_type"]
+            left = self._format_variable(cond["left"])
+            right = self._format_value(cond["right"])
+
+            if cond_type == "IS":
+                # Check if right is a variable reference
+                if self._is_variable_ref(cond["right"]):
+                    prolog_conditions.append(f"var_equals({left}, {right})")
+                else:
+                    prolog_conditions.append(f"{left}({right})")
+            elif cond_type == "IS_LIKE":
+                prolog_conditions.append(f"is_like({left}, {right})")
+
+        # Generate the let binding predicate
+        # Format: let_<quantifier>_bound(collection, binding, [cond1, cond2, ...])
+        conditions_list = ", ".join(prolog_conditions)
+        predicate = f"let_{quantifier}_bound({collection}, {binding}, [{conditions_list}])"
+        return [predicate]
+
     def _format_variable(self, var) -> str:
         """Format variable name (remove ? prefix if present)
 
         Handles both simple variables (?var) and qualified variables (?child of ?parent).
         For qualified variables, returns the format: child_of_parent
+        Also handles nested qualified variables: ?a of (?b of ?c) -> a_of_b_of_c
         """
         if isinstance(var, dict) and 'child' in var and 'parent' in var:
             # Qualified variable: ?child of ?parent
             child = self._strip_prefix(var['child'])
-            parent = self._strip_prefix(var['parent'])
+            # Parent might be nested (another dict or tuple)
+            parent = self._format_variable(var['parent'])
+            return f"{child}_of_{parent}"
+        elif isinstance(var, tuple) and len(var) == 2:
+            # Tuple form of qualified variable: (?child, ?parent)
+            child = self._strip_prefix(var[0]) if isinstance(var[0], str) else self._format_variable(var[0])
+            parent = self._format_variable(var[1]) if not isinstance(var[1], str) else self._strip_prefix(var[1])
             return f"{child}_of_{parent}"
         elif isinstance(var, str):
             return self._strip_prefix(var)
@@ -383,6 +461,12 @@ class DeLPTranslator:
         """Format value for Prolog"""
         if isinstance(value, bool):
             return str(value).lower()
+        elif isinstance(value, dict) and 'child' in value and 'parent' in value:
+            # Qualified variable reference: ?child of ?parent
+            return self._format_variable(value)
+        elif isinstance(value, tuple) and len(value) == 2:
+            # Tuple form of qualified variable (possibly nested)
+            return self._format_variable(value)
         elif isinstance(value, str):
             # If it's a variable reference (? prefix)
             if value.startswith('?'):
@@ -400,6 +484,16 @@ class DeLPTranslator:
             return f"[{', '.join(formatted)}]"
         else:
             return str(value)
+
+    def _is_variable_ref(self, value) -> bool:
+        """Check if value is a variable reference (simple or qualified)"""
+        if isinstance(value, dict) and 'child' in value and 'parent' in value:
+            return True
+        if isinstance(value, tuple) and len(value) == 2:
+            return True
+        if isinstance(value, str) and value.startswith('?'):
+            return True
+        return False
 
     def _handle_overrides(self, rule: Rule, rule_id: str):
         """Handle OVERRIDES clause for rules seen so far"""

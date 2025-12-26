@@ -86,7 +86,8 @@ override_target: OVERRIDE_ALL | OVERRIDE_NORMAL
 // Conditions
 conditions: condition (logic_op condition)*
 
-condition: length_condition
+condition: let_condition
+         | length_condition
          | variable_ref IS_LIKE_OP operand
          | variable_ref HAS_OP quantified_check  -> has_quantified
          | variable_ref HAS_OP operand           -> has_simple
@@ -95,6 +96,14 @@ condition: length_condition
          | NOT_WARRANTED_OP condition            -> not_warranted_condition
          | NOT_OP condition                      -> not_condition
          | "(" conditions ")"
+
+// Let binding for quantified conditions with explicit binding variable
+// Example: let ?link be any in ?chain where ?prop of ?link is value and ...
+let_condition: "let" VARIABLE "be" let_quantifier "in" variable_ref "where" bound_conditions
+
+let_quantifier: "any"   -> let_any
+              | "all"   -> let_all
+              | "none"  -> let_none
 
 // Length of condition: (length of ?list where ?prop is value) is N / > N
 // Parentheses required for clarity
@@ -115,13 +124,26 @@ variable_ref: VARIABLE "of" "(" variable_ref ")"  -> qualified_variable_nested
 
 // Quantified has conditions: has any/all/none that is/is like/is not
 // Also supports: has any that ?property is value
-// NOTE: inline_condition must come first (starts with IS), then property_condition (starts with VARIABLE)
+// For explicit binding with compound conditions, use "let ?x be any in ?coll where ..."
 quantified_check: quantifier inline_condition
                 | quantifier property_condition   -> quantified_property
 
+// Quantifier (without binding - for simple "has any that is/is like" patterns)
 quantifier: "any" "that"   -> any_quantifier
           | "all" "that"   -> all_quantifier
           | "none" "that"  -> none_quantifier
+
+// Bound conditions: conditions that can reference the bound variable
+// First condition, then any additional "and/or condition" pairs
+// Uses higher priority (.2) to prefer consuming "and" here over outer conditions
+bound_conditions: bound_condition bound_continuation*
+
+bound_continuation.2: "and" bound_condition  -> bound_and_cont
+                    | "or" bound_condition   -> bound_or_cont
+
+bound_condition: variable_ref IS_LIKE_OP operand  -> bound_is_like
+               | variable_ref IS_OP operand       -> bound_is
+               | "(" bound_conditions ")"         -> bound_grouped
 
 // Property-based condition: ?property is value (starts with VARIABLE)
 property_condition: VARIABLE IS_LIKE_OP operand  -> property_is_like
@@ -140,7 +162,9 @@ HAS_OP: "has"
 NOT_WARRANTED_OP: "not" /\s+/ "warranted"
 NOT_OP: "not"
 
-operand: VARIABLE
+// Operand can be a variable reference (including qualified paths), literal, or boolean
+// variable_ref must come first since VARIABLE is a subset of what variable_ref matches
+operand: variable_ref
        | string_literal
        | boolean
        | number

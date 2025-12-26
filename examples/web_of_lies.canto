@@ -1,0 +1,53 @@
+"""
+Web of Lies - Boolean Chain Evaluation
+
+Evaluates a chain of truth/lie claims to determine if a person tells the truth.
+Each puzzle has a base fact (X tells the truth / X lies) and a chain of claims
+(Y says X tells the truth / Y says X lies). The chain is evaluated by propagating
+truth values through the claims.
+"""
+
+// Semantic categories for parsing statements
+?truth_claim resembles "tells the truth", "is truthful", "is honest"
+?lie_claim resembles "lies", "is a liar", "is lying"
+
+// Schema for the puzzle
+?puzzle meaning "the web of lies puzzle" with
+    ?base_person meaning "the person with a direct statement (X tells the truth / X lies)"
+    ?base_is_truthful can be true, false meaning "true if base person tells the truth, false if base person lies"
+    ?chain has a list of ?link meaning "the chain of claims to evaluate in order from base outward"
+    ?target_person meaning "the person the question asks about"
+
+?link meaning "a single claim in the chain" with
+    ?speaker meaning "the person making the claim"
+    ?subject meaning "the person being described"
+    ?claims_subject_truthful can be true, false meaning "true if speaker claims subject tells truth, false if claims subject lies"
+    ?speaker_is_truthful can be true, false meaning "computed: speaker's actual truth value based on chain evaluation"
+
+// Determine if a claim asserts truth or lies
+?claims_subject_truthful of ?link becomes true when ?claims_subject_truthful of ?link is like ?truth_claim
+?claims_subject_truthful of ?link becomes false when ?claims_subject_truthful of ?link is like ?lie_claim
+
+// Final answer based on target's truth value
+?answer can be "Yes", "No"
+
+// Find target in chain and use their computed truth value
+// Uses let binding to ensure both conditions check the SAME link in the chain
+?answer becomes "Yes"
+    when let ?link be any in ?chain of ?puzzle where
+        ?speaker of ?link is ?target_person of ?puzzle
+        and ?speaker_is_truthful of ?link is true
+
+?answer becomes "No"
+    when let ?link be any in ?chain of ?puzzle where
+        ?speaker of ?link is ?target_person of ?puzzle
+        and ?speaker_is_truthful of ?link is false
+
+// If target is the base person, use base truth value directly
+?answer becomes "Yes"
+    when ?target_person of ?puzzle is ?base_person of ?puzzle
+    and ?base_is_truthful of ?puzzle is true
+
+?answer becomes "No"
+    when ?target_person of ?puzzle is ?base_person of ?puzzle
+    and ?base_is_truthful of ?puzzle is false

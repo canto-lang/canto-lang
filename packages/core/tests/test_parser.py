@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from canto_core.parser import parse_string, parse_file
 from canto_core.parser.validator import validate_ast
 from canto_core.ast_nodes import VariableDeclaration, SemanticCategory, Rule
-from canto_core.ast_nodes.rules import RulePriority, OverrideTarget
+from canto_core.ast_nodes.rules import RulePriority, OverrideTarget, Condition
 
 
 def test_freetext_variable():
@@ -608,6 +608,111 @@ def test_import_file_not_found(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         parse_file(str(main_file))
+
+
+def test_variable_ref_as_operand():
+    """Test that variable_ref (qualified paths) can be used on the right side of 'is'"""
+    dsl = """
+    ?puzzle meaning "the puzzle" with
+        ?target_person meaning "who we ask about"
+        ?base_person meaning "base person"
+
+    ?answer can be "Yes", "No"
+
+    ?answer becomes "Yes"
+        when ?target_person of ?puzzle is ?base_person of ?puzzle
+    """
+    ast = parse_string(dsl)
+    rules = [node for node in ast if isinstance(node, Rule)]
+    assert len(rules) == 1
+
+    # Check that the condition has the right structure
+    rule = rules[0]
+    assert rule.conditions is not None
+    # conditions can be a Condition or a list
+    condition = rule.conditions if isinstance(rule.conditions, Condition) else rule.conditions[0]
+    assert condition.operator == "IS"
+    # Left side should be qualified path
+    assert isinstance(condition.left, dict)
+    assert "child" in condition.left
+    # Right side should also be qualified path (variable_ref)
+    assert isinstance(condition.right, (dict, tuple)), f"Expected dict or tuple, got {type(condition.right)}: {condition.right}"
+
+
+def test_variable_ref_nested_as_operand():
+    """Test nested variable_ref on right side of 'is'"""
+    dsl = """
+    ?outer meaning "outer" with
+        ?middle meaning "middle" with
+            ?inner meaning "inner"
+
+    ?result can be "match", "no_match"
+
+    ?result becomes "match"
+        when ?inner of (?middle of ?outer) is ?inner of (?middle of ?outer)
+    """
+    ast = parse_string(dsl)
+    rules = [node for node in ast if isinstance(node, Rule)]
+    assert len(rules) == 1
+
+
+def test_let_binding_any():
+    """Test let binding with 'any' quantifier and compound conditions"""
+    dsl = """
+?chain has a list of ?link meaning "the chain"
+?link meaning "a link" with
+    ?speaker meaning "the speaker"
+    ?speaker_is_truthful can be true, false
+
+?target meaning "target person"
+
+?result can be "Yes", "No"
+
+?result becomes "Yes"
+    when let ?link be any in ?chain where
+        ?speaker of ?link is ?target
+        and ?speaker_is_truthful of ?link is true
+"""
+    ast = parse_string(dsl)
+    rules = [node for node in ast if isinstance(node, Rule)]
+    assert len(rules) == 1
+
+    rule = rules[0]
+    assert rule.conditions is not None
+
+
+def test_let_binding_all():
+    """Test let binding with 'all' quantifier"""
+    dsl = """
+?items has a list of ?item meaning "items"
+?item meaning "an item" with
+    ?status can be "active", "inactive"
+
+?all_active can be true, false
+
+?all_active becomes true
+    when let ?item be all in ?items where ?status of ?item is "active"
+"""
+    ast = parse_string(dsl)
+    rules = [node for node in ast if isinstance(node, Rule)]
+    assert len(rules) == 1
+
+
+def test_let_binding_none():
+    """Test let binding with 'none' quantifier"""
+    dsl = """
+?items has a list of ?item meaning "items"
+?item meaning "an item" with
+    ?is_error can be true, false
+
+?no_errors can be true, false
+
+?no_errors becomes true
+    when let ?item be none in ?items where ?is_error of ?item is true
+"""
+    ast = parse_string(dsl)
+    rules = [node for node in ast if isinstance(node, Rule)]
+    assert len(rules) == 1
 
 
 if __name__ == "__main__":

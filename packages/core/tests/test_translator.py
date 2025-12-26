@@ -446,5 +446,83 @@ def test_with_block_same_as_explicit_has():
     assert "has_property(patient, name, single)" in prolog_has
 
 
+def test_let_binding_translation():
+    """Test that let binding translates to correct Prolog"""
+    dsl = """
+?chain has a list of ?link meaning "the chain"
+?link meaning "a link" with
+    ?speaker meaning "the speaker"
+    ?speaker_is_truthful can be true, false
+
+?target meaning "target person"
+
+?result can be "Yes", "No"
+
+?result becomes "Yes"
+    when let ?link be any in ?chain where
+        ?speaker of ?link is ?target
+        and ?speaker_is_truthful of ?link is true
+"""
+    ast = parse_string(dsl)
+    delp = translate_to_delp(ast)
+
+    # Should have one strict rule
+    assert len(delp.strict_rules) == 1
+    rule = delp.strict_rules[0]
+
+    # Check the rule head
+    assert rule.head == "result('Yes')"
+
+    # Check the rule body contains let_any_bound with correct structure
+    assert len(rule.body) == 1
+    body_pred = rule.body[0]
+    assert "let_any_bound" in body_pred
+    assert "chain" in body_pred
+    assert "link" in body_pred
+    # Should have the two conditions
+    assert "var_equals(speaker_of_link, target)" in body_pred
+    assert "speaker_is_truthful_of_link(true)" in body_pred
+
+
+def test_let_all_translation():
+    """Test let all binding translates correctly"""
+    dsl = """
+?items has a list of ?item meaning "items"
+?item meaning "an item" with
+    ?status can be "active", "inactive"
+
+?all_active can be true, false
+
+?all_active becomes true
+    when let ?item be all in ?items where ?status of ?item is "active"
+"""
+    ast = parse_string(dsl)
+    delp = translate_to_delp(ast)
+
+    rule = delp.strict_rules[0]
+    assert "let_all_bound" in rule.body[0]
+    assert "status_of_item('active')" in rule.body[0]
+
+
+def test_let_none_translation():
+    """Test let none binding translates correctly"""
+    dsl = """
+?items has a list of ?item meaning "items"
+?item meaning "an item" with
+    ?is_error can be true, false
+
+?no_errors can be true, false
+
+?no_errors becomes true
+    when let ?item be none in ?items where ?is_error of ?item is true
+"""
+    ast = parse_string(dsl)
+    delp = translate_to_delp(ast)
+
+    rule = delp.strict_rules[0]
+    assert "let_none_bound" in rule.body[0]
+    assert "is_error_of_item(true)" in rule.body[0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

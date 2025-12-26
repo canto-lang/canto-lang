@@ -171,6 +171,41 @@ has_none_neq(_, _).
  */
 has_any_property_is(_, _).
 
+/**
+ * var_equals(+Var1, +Var2)
+ * True if both variables have the same value.
+ * At build time, this succeeds symbolically.
+ * At runtime, the LLM evaluates whether the extracted values are equal.
+ */
+var_equals(_, _).
+
+%% ----------------------------------------------------------------------------
+%% Let Binding Quantified Predicates (let_*_bound)
+%% ----------------------------------------------------------------------------
+%% These predicates represent quantified conditions with explicit element binding
+%% and compound conditions. Used for: let ?elem be any in ?coll where cond1 and cond2
+%% At build time, they succeed symbolically.
+
+/**
+ * let_any_bound(+Collection, +Binding, +Conditions)
+ * True if any element in Collection satisfies all Conditions.
+ * Binding is the element variable name (for documentation).
+ * Conditions is a list of Prolog goals to check.
+ */
+let_any_bound(_, _, _).
+
+/**
+ * let_all_bound(+Collection, +Binding, +Conditions)
+ * True if all elements in Collection satisfy all Conditions.
+ */
+let_all_bound(_, _, _).
+
+/**
+ * let_none_bound(+Collection, +Binding, +Conditions)
+ * True if no element in Collection satisfies all Conditions.
+ */
+let_none_bound(_, _, _).
+
 %% ----------------------------------------------------------------------------
 %% Length/Count Predicates (length_where_*)
 %% ----------------------------------------------------------------------------
@@ -478,6 +513,12 @@ symbolic_predicate(has_none_like).
 symbolic_predicate(has_none_eq).
 symbolic_predicate(has_none_neq).
 symbolic_predicate(has_any_property_is).
+% Variable equality
+symbolic_predicate(var_equals).
+% Let binding quantified (compound conditions)
+symbolic_predicate(let_any_bound).
+symbolic_predicate(let_all_bound).
+symbolic_predicate(let_none_bound).
 % Length/count predicates
 symbolic_predicate(length_where_like_eq).
 symbolic_predicate(length_where_like_gt).

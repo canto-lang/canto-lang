@@ -1,0 +1,21 @@
+"""
+Extract structured food ontology from product names.
+Output all fields in English, singular form.
+"""
+
+?form_name of ?processing_state becomes "dried"
+    when ?form_name of ?processing_state is like ?drying_terms
+
+?form_name of ?processing_state becomes "frozen"
+    when ?form_name of ?processing_state is like ?freezing_terms
+
+?form_name of ?processing_state becomes "canned"
+    when ?form_name of ?processing_state is like ?canning_terms
+
+?variety of ?food_item becomes "Cherry"
+    when ?canonical_name of ?food_item is like ?cherry_variety
+
+?is_organic of ?food_item becomes true
+    when ?canonical_name of ?food_item is like ?organic_terms
+
+normally ?is_organic of ?food_item becomes false

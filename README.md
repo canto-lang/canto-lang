@@ -151,6 +151,158 @@ normally ?priority becomes "normal"
 ?bulk_order becomes true when length of ?items where is like ?bulk_terms > 5
 ```
 
+## Python Concepts
+
+Canto's `Concept` API is grounded in **Prototype Theory** (Eleanor Rosch, 1973) — the idea that humans categorize things not through rigid definitions, but through **prototypical exemplars**. We don't define "bird" with necessary and sufficient conditions; we recognize birds by their similarity to robins and sparrows.
+
+Classical categorization (from Aristotle onward) assumes categories have sharp boundaries: something either *is* or *isn't* a member based on a checklist of features. But Rosch's experiments showed that categories are actually **graded** — a robin is a "better" bird than a penguin, and we judge membership by *family resemblance* to central examples. This explains why traditional rule-based systems struggle with natural language: they demand crisp boundaries where human cognition sees gradients. LLMs, trained on human text, inherit this prototype-based reasoning. When you give an LLM exemplars like "chest pain" and "difficulty breathing," it doesn't match strings — it recognizes the *semantic neighborhood* those examples define. Canto's `resembles` clause makes this cognitive model explicit and composable.
+
+### Defining Concepts
+
+The `resembles` clause defines prototypes — the LLM judges membership by similarity:
+
+```python
+from canto_core import Concept
+
+# Prototypical emergency symptoms
+emergency_symptoms = (
+    Concept("emergency_symptoms")
+    .resembles("chest pain", "difficulty breathing", "severe bleeding")
+    .meaning("symptoms requiring immediate attention")
+)
+
+# "Shortness of breath" matches because it's similar to the prototypes
+```
+
+Concepts can have nested structure with `has`:
+
+```python
+patient = (
+    Concept("patient")
+    .meaning("extracted patient information")
+    .has(
+        Concept("name").meaning("patient's full name"),
+        Concept("age").meaning("patient's age in years"),
+        Concept("chief_complaint").meaning("primary reason for visit"),
+        Concept("symptoms").has(
+            Concept("text").meaning("symptom description"),
+            Concept("severity").can_be("mild", "moderate", "severe"),
+        ),
+    )
+)
+```
+
+And constrained values with `can_be`:
+
+```python
+triage_level = (
+    Concept("triage_level")
+    .meaning("urgency classification")
+    .can_be("immediate", "urgent", "delayed", "minor")
+    .resembles("priority", "severity", "acuity")
+)
+```
+
+### Building with Resolution
+
+The `CantoBuilder` validates that all references in your `.canto` file resolve to declared concepts or variables:
+
+```python
+from canto_core import CantoBuilder, ResolutionErrors
+
+builder = CantoBuilder()
+builder.register_concept(patient)
+builder.register_concept(emergency_symptoms)
+
+try:
+    result = builder.build("triage.canto")
+except ResolutionErrors as e:
+    print(e)  # "Unresolved reference: 'unknown_concept'"
+```
+
+The `BuildResult` contains the parsed AST, symbol table, and registered concepts:
+
+```python
+result = builder.build("triage.canto")
+
+# Access the symbol table
+print("patient" in result.symbols)  # True
+
+symbol = result.symbols.resolve("patient")
+print(symbol.kind)    # SymbolKind.CONCEPT
+print(symbol.source)  # The Concept object
+
+# Access registered concepts
+print(result.concepts.keys())  # dict_keys(['patient', 'emergency_symptoms'])
+```
+
+### Generating Prompts
+
+The `PromptGenerator` combines concepts with parsed rules to generate prompts:
+
+```python
+from canto_core import PromptGenerator
+
+result = builder.build("triage.canto")
+generator = PromptGenerator(result)
+prompt = generator.generate()
+
+print(prompt)
+```
+
+### Complete Example
+
+**concepts.py**
+```python
+from canto_core import Concept
+
+patient = (
+    Concept("patient")
+    .meaning("extracted patient information")
+    .has(
+        Concept("name").meaning("patient's full name"),
+        Concept("chief_complaint").meaning("primary reason for visit"),
+    )
+)
+
+emergency_symptoms = (
+    Concept("emergency_symptoms")
+    .resembles("chest pain", "difficulty breathing", "severe bleeding", "loss of consciousness")
+    .meaning("symptoms requiring immediate attention")
+)
+```
+
+**triage.canto**
+```canto
+"""
+Medical triage classification.
+"""
+
+?is_emergency can be true, false meaning "whether case requires immediate attention"
+
+?is_emergency becomes true
+    when ?chief_complaint of ?patient is like ?emergency_symptoms
+    overriding all
+
+normally ?is_emergency becomes false
+```
+
+**build.py**
+```python
+from canto_core import CantoBuilder, PromptGenerator
+from concepts import patient, emergency_symptoms
+
+builder = CantoBuilder()
+builder.register_concept(patient)
+builder.register_concept(emergency_symptoms)
+
+result = builder.build("triage.canto")
+
+generator = PromptGenerator(result)
+prompt = generator.generate()
+print(prompt)
+```
+
 ## Running Tests
 
 ```bash

@@ -1,0 +1,12 @@
+"""
+Medical triage classification.
+Determine if a patient case is an emergency based on symptoms.
+"""
+
+?is_emergency can be true, false meaning "whether this case requires immediate attention"
+
+?is_emergency becomes true
+    when ?chief_complaint of ?patient is like ?emergency_symptoms
+    overriding all
+
+normally ?is_emergency becomes false

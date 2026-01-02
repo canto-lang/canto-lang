@@ -765,13 +765,19 @@ class DeLPReasoningAnalyzer:
                 lines.append(f"?{var_name} ✅ SINGLE RULE")
                 lines.append(f"  └── {rule.get('rule_id', '?')} [{type_char}] \"{value}\" → ✓")
             else:
-                value = rules[0].get('value', '?') if rules else '?'
-                lines.append(f"?{var_name} ✅ ALIGNED ({num_rules} rules, same value)")
+                # Check if all rules have the same value
+                values = [rule.get('value', '?') for rule in rules]
+                unique_values = set(values)
+                if len(unique_values) == 1:
+                    lines.append(f"?{var_name} ✅ ALIGNED ({num_rules} rules, same value)")
+                else:
+                    lines.append(f"?{var_name} ✅ ALIGNED ({num_rules} rules, mutually exclusive)")
                 for i, rule in enumerate(rules):
                     is_last = (i == len(rules) - 1)
                     prefix = "  └── " if is_last else "  ├── "
                     type_char = "S" if rule.get('type') == 'strict' else "D"
-                    lines.append(f"{prefix}{rule.get('rule_id', '?')} [{type_char}] \"{value}\"")
+                    rule_value = rule.get('value', '?')
+                    lines.append(f"{prefix}{rule.get('rule_id', '?')} [{type_char}] \"{rule_value}\"")
 
         # Issues section - only show actionable issues
         actionable_issues = [

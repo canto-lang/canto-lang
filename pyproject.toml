@@ -4,6 +4,9 @@ version = "0.0.1"
 description = "Canto DSL - an embedded domain specific neurosymbolic language with defeasible logic programming capabilities"
 readme = "README.md"
 requires-python = ">=3.12"
+dependencies = [
+    "z3-solver>=4.15.4.0",
+]
 
 [tool.uv.workspace]
 members = ["packages/*"]

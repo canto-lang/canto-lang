@@ -2,7 +2,7 @@
 PromptGenerator - High-level abstraction for generating prompts from Canto programs.
 
 Wraps the full build pipeline:
-1. DeLPTranslator → Prolog KB
+1. FOL Translator → FOL IR → Prolog KB
 2. LLMPredicateGenerator → predicates for semantic categories
 3. DeLPReasoningAnalyzer → reasoning structure
 4. PromptTemplateGenerator → final prompt
@@ -13,11 +13,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from .codegen import (
-    DeLPTranslator,
     LLMPredicateGenerator,
     PromptTemplateGenerator,
 )
 from .delp import DeLPReasoningAnalyzer
+from .fol import translate_to_fol
 
 if TYPE_CHECKING:
     from .builder import BuildResult
@@ -74,10 +74,9 @@ class PromptGenerator:
 
     @property
     def program(self):
-        """Lazily translate to DeLP program."""
+        """Lazily translate to FOL IR."""
         if self._program is None:
-            translator = DeLPTranslator()
-            self._program = translator.translate(self._ast)
+            self._program = translate_to_fol(self._ast)
         return self._program
 
     @property

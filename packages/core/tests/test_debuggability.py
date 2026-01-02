@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.delp.analyzer import DeLPReasoningAnalyzer
 
 def test_conflict_detection():
@@ -29,8 +29,7 @@ def test_conflict_detection():
     """
 
     ast = parse_string(dsl_conflict)
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
+    program = translate_to_fol(ast)
     analyzer = DeLPReasoningAnalyzer(program)
 
     analysis = analyzer.analyze()
@@ -66,8 +65,7 @@ def test_gap_analysis():
     """
 
     ast = parse_string(dsl_gap)
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
+    program = translate_to_fol(ast)
     analyzer = DeLPReasoningAnalyzer(program)
 
     analysis = analyzer.analyze()
@@ -111,8 +109,7 @@ def test_var_equals_static_analysis():
 """
 
     ast = parse_string(dsl_var_equals)
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
+    program = translate_to_fol(ast)
     analyzer = DeLPReasoningAnalyzer(program)
 
     # This should not raise an exception

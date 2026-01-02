@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.delp.engine import create_janus_engine
 
 def test_specificity_principle():
@@ -35,8 +35,7 @@ def test_specificity_principle():
     """
 
     ast = parse_string(dsl)
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
+    program = translate_to_fol(ast)
     engine = create_janus_engine(program)
 
     # Check fly(false) - should be warranted because penguin rule is more specific
@@ -65,8 +64,7 @@ def test_cycle_detection():
     """
 
     ast = parse_string(dsl)
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
+    program = translate_to_fol(ast)
     engine = create_janus_engine(program)
 
     # This should not hang
@@ -96,8 +94,7 @@ def test_consistency():
     """
 
     ast = parse_string(dsl)
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
+    program = translate_to_fol(ast)
     engine = create_janus_engine(program)
 
     result = engine.delp_query("flag(true)")

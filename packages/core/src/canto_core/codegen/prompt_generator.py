@@ -2,11 +2,18 @@
 Prompt Template Generator - BUILD Step 3
 
 Converts DeLP reasoning structure into a reusable LLM prompt template.
+Integrates FOL verification to ensure generated prompts match DSL semantics.
 """
 
 import dspy
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from pathlib import Path
+
+from ..fol import (
+    ASTToFOLTranslator,
+    EquivalenceVerifier,
+    CantoFOL,
+)
 
 
 class GeneratePromptTemplate(dspy.Signature):
@@ -405,6 +412,8 @@ class PromptTemplateGenerator:
 
     Takes the output of DeLPReasoningAnalyzer and converts it into
     a natural language prompt template suitable for LLM execution.
+
+    Integrates FOL verification to ensure generated prompts match DSL semantics.
     """
 
     def __init__(self, max_retries: int = 2):
@@ -420,12 +429,53 @@ class PromptTemplateGenerator:
         # Setup few-shot examples
         self.generator.demos = EXAMPLES
 
+        # FOL verification (set via set_fol or from AST)
+        self._fol: Optional[CantoFOL] = None
+        self._verifier: Optional[EquivalenceVerifier] = None
+
+    def set_fol(self, fol: CantoFOL) -> None:
+        """
+        Set the FOL IR for verification.
+
+        Args:
+            fol: The CantoFOL IR to verify prompts against
+        """
+        self._fol = fol
+        self._verifier = EquivalenceVerifier(fol)
+
+    def set_fol_from_ast(self, ast: List, source_file: str = "<string>") -> None:
+        """
+        Set the FOL IR from AST nodes.
+
+        Args:
+            ast: List of AST nodes from parsed DSL
+            source_file: Source file path for error messages
+        """
+        translator = ASTToFOLTranslator()
+        self._fol = translator.translate(ast, source_file=source_file)
+        self._verifier = EquivalenceVerifier(self._fol)
+
+    def verify_prompt(self, prompt: str) -> List[str]:
+        """
+        Verify a prompt against the DSL using FOL.
+
+        Args:
+            prompt: The prompt template to verify
+
+        Returns:
+            List of constraint violations (empty if valid)
+        """
+        if self._verifier is None:
+            return []  # No verification configured
+        return self._verifier.verify_constraints(prompt)
+
     def generate_from_structure(
         self,
         reasoning_structure: Dict[str, Any],
         dsl_instructions: str = "",
         output_variables: List[str] = None,
-        program = None
+        program = None,
+        ast: List = None,
     ) -> str:
         """
         Generate prompt template from reasoning structure
@@ -435,10 +485,15 @@ class PromptTemplateGenerator:
             dsl_instructions: Instructions from DSL file to include in the generated prompt
             output_variables: List of variables to include in output (if None, auto-detects OUTPUT variables)
             program: Optional DeLPProgram to detect OUTPUT variables
+            ast: Optional AST nodes for FOL verification
 
         Returns:
             Prompt template string with {user_input} placeholder
         """
+        # Setup FOL verification if AST provided
+        if ast is not None and self._verifier is None:
+            self.set_fol_from_ast(ast)
+
         # Extract output variables from structure if not provided
         if output_variables is None:
             # Use all variables from the reasoning structure
@@ -448,14 +503,21 @@ class PromptTemplateGenerator:
         import json
         structure_str = json.dumps(reasoning_structure, indent=2)
 
-        # Try generating with retries
+        # Try generating with retries, using FOL violations as feedback
         last_error = None
+        fol_feedback = ""
+
         for attempt in range(self.max_retries):
             try:
                 print(f"Generating prompt template (attempt {attempt + 1}/{self.max_retries})...")
 
+                # Include FOL feedback in instructions if we have violations from previous attempt
+                enhanced_instructions = dsl_instructions
+                if fol_feedback:
+                    enhanced_instructions = f"{dsl_instructions}\n\nIMPORTANT - Fix these issues from the previous attempt:\n{fol_feedback}"
+
                 result = self.generator(
-                    dsl_instructions=dsl_instructions,
+                    dsl_instructions=enhanced_instructions,
                     reasoning_structure=structure_str,
                     output_variables=", ".join(output_variables)
                 )
@@ -468,7 +530,20 @@ class PromptTemplateGenerator:
                     print(f"✗ Validation failed: {last_error}")
                     continue
 
+                # FOL verification
+                violations = self.verify_prompt(prompt_template)
+                if violations:
+                    print(f"✗ FOL verification found {len(violations)} issue(s):")
+                    for v in violations:
+                        print(f"    - {v}")
+                    # Build feedback for next attempt
+                    fol_feedback = "\n".join(f"- {v}" for v in violations)
+                    last_error = f"FOL verification failed: {len(violations)} violations"
+                    continue
+
                 print(f"✓ Generated prompt template successfully")
+                if self._verifier is not None:
+                    print(f"✓ FOL verification passed")
                 return prompt_template
 
             except Exception as e:

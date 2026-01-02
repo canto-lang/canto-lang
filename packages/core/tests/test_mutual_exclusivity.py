@@ -9,7 +9,9 @@ a COMPETES warning.
 import pytest
 from pathlib import Path
 
-from canto_core import parse_file, DeLPTranslator, DeLPReasoningAnalyzer
+from canto_core import parse_file
+from canto_core.fol import translate_to_fol
+from canto_core.delp import DeLPReasoningAnalyzer
 from canto_core.parser import CantoParser
 
 
@@ -20,8 +22,7 @@ def analyze_dsl(dsl_code: str) -> str:
     """Helper to parse DSL and return analysis report."""
     parser = CantoParser()
     result = parser.parse(dsl_code)
-    translator = DeLPTranslator()
-    program = translator.translate(result.ast)
+    program = translate_to_fol(result.ast)
     analyzer = DeLPReasoningAnalyzer(program)
     return analyzer.get_dsl_analysis_report()
 
@@ -323,6 +324,69 @@ class TestQuantifiedHasConditions:
         assert "COMPETES" not in report, f"Got:\n{report}"
 
 
+class TestQuantifiedHasImplications:
+    """Tests for logical implications between quantifiers (has all -> has any)."""
+
+    def test_has_all_implies_has_any_no_conflict(self):
+        """
+        has all like implies has any like, so:
+        - r1: action becomes "A" when items has all that is like shiny
+        - r2: action becomes "B" when NOT (items has any that is like shiny)
+
+        If all items are shiny (has all), then at least one is shiny (has any),
+        so the NOT condition in r2 can never be true when r1's condition is true.
+        Thus, no conflict should arise.
+        """
+        report = analyze_dsl('''
+            ?action can be "A", "B"
+            ?items meaning "a list of items"
+            ?shiny resembles "a shiny object"
+
+            normally ?action becomes "A" when ?items has all that is like ?shiny
+            normally ?action becomes "B" when not (?items has any that is like ?shiny)
+        ''')
+        # has all implies has any, so these are mutually exclusive
+        assert "COMPETES" not in report, f"Got:\n{report}"
+
+    def test_has_none_implies_not_has_any_no_conflict(self):
+        """
+        has none like implies NOT has any like, so:
+        - r1: action becomes "A" when items has none that is like bad
+        - r2: action becomes "B" when items has any that is like bad
+
+        These are mutually exclusive by definition.
+        """
+        report = analyze_dsl('''
+            ?action can be "A", "B"
+            ?items meaning "a list of items"
+            ?bad resembles "a bad item"
+
+            normally ?action becomes "A" when ?items has none that is like ?bad
+            normally ?action becomes "B" when ?items has any that is like ?bad
+        ''')
+        # has none and has any are mutually exclusive
+        assert "COMPETES" not in report, f"Got:\n{report}"
+
+    def test_has_all_vs_has_none_same_category_no_conflict(self):
+        """
+        has all and has none with same category are mutually exclusive.
+        - r1: action becomes "A" when items has all that is like shiny
+        - r2: action becomes "B" when items has none that is like shiny
+
+        Cannot have all shiny AND none shiny at the same time.
+        """
+        report = analyze_dsl('''
+            ?action can be "A", "B"
+            ?items meaning "a list of items"
+            ?shiny resembles "a shiny object"
+
+            normally ?action becomes "A" when ?items has all that is like ?shiny
+            normally ?action becomes "B" when ?items has none that is like ?shiny
+        ''')
+        # has all and has none with same category are mutually exclusive
+        assert "COMPETES" not in report, f"Got:\n{report}"
+
+
 class TestLengthConditions:
     """Tests with length of where conditions."""
 
@@ -436,3 +500,49 @@ class TestEdgeCases:
         ''')
         # Different categories = mutually exclusive
         assert "COMPETES" not in report, f"Got:\n{report}"
+
+
+class TestReportValues:
+    """Tests that verify the report correctly shows rule values."""
+
+    def test_different_values_shown_correctly(self):
+        """Report should show different values for different rules."""
+        report = analyze_dsl('''
+            ?fruit_terms resembles "apple", "orange"
+            ?vehicle_terms resembles "car", "truck"
+            ?input meaning "input"
+            ?result can be "fruit", "vehicle"
+            ?result becomes "fruit" when ?input is like ?fruit_terms
+            ?result becomes "vehicle" when ?input is like ?vehicle_terms
+        ''')
+        # Should show both values correctly
+        assert '"fruit"' in report, f"Expected 'fruit' in report:\n{report}"
+        assert '"vehicle"' in report, f"Expected 'vehicle' in report:\n{report}"
+
+    def test_same_values_shown_correctly(self):
+        """Report should show same value when rules agree."""
+        report = analyze_dsl('''
+            ?cat_a resembles "a"
+            ?cat_b resembles "b"
+            ?input meaning "input"
+            ?result can be "same"
+            ?result becomes "same" when ?input is like ?cat_a
+            ?result becomes "same" when ?input is like ?cat_b
+        ''')
+        # Should show the same value for both rules
+        assert '"same"' in report, f"Expected 'same' in report:\n{report}"
+        # Should say ALIGNED since same value
+        assert "ALIGNED" in report, f"Expected ALIGNED in report:\n{report}"
+
+    def test_conflict_values_shown_correctly(self):
+        """Report should show conflicting values when rules compete."""
+        report = analyze_dsl('''
+            ?food_terms resembles "pizza", "burger"
+            ?input meaning "input"
+            ?result can be "a", "b"
+            ?result becomes "a" when ?input is like ?food_terms
+            ?result becomes "b" when ?input is like ?food_terms
+        ''')
+        # Should show both conflicting values
+        assert '"a"' in report, f"Expected 'a' in report:\n{report}"
+        assert '"b"' in report, f"Expected 'b' in report:\n{report}"

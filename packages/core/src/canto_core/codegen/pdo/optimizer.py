@@ -1,5 +1,7 @@
 """
 Canto PDO Optimizer - Prompt Duel Optimizer for instruction tuning
+
+Integrates FOL verification to provide semantic feedback during optimization.
 """
 
 import json
@@ -12,6 +14,7 @@ from tqdm import tqdm
 
 from .config import PDOConfig
 from .context_formatter import format_reasoning_context, format_context_for_prompt
+from ...fol import CantoFOL, EquivalenceVerifier, ASTToFOLTranslator
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,8 @@ class CantoPDO:
 
     Generates optimized prompts from Canto reasoning patterns using
     dueling bandits with Thompson sampling.
+
+    Integrates FOL verification to provide semantic feedback during optimization.
     """
 
     def __init__(self, config: Optional[PDOConfig] = None):
@@ -51,11 +56,59 @@ class CantoPDO:
         # Use globally configured DSPy LM
         self.lm = dspy.settings.lm
 
+        # FOL verification (optional, set via set_fol or set_fol_from_ast)
+        self._fol: Optional[CantoFOL] = None
+        self._verifier: Optional[EquivalenceVerifier] = None
+
+    def set_fol(self, fol: CantoFOL) -> None:
+        """Set the FOL IR for verification during optimization."""
+        self._fol = fol
+        self._verifier = EquivalenceVerifier(fol)
+
+    def set_fol_from_ast(self, ast: List, source_file: str = "<string>") -> None:
+        """Set the FOL IR from AST nodes."""
+        translator = ASTToFOLTranslator()
+        self._fol = translator.translate(ast, source_file=source_file)
+        self._verifier = EquivalenceVerifier(self._fol)
+
+    def verify_prompt(self, prompt: str, use_full: bool = None) -> List[str]:
+        """
+        Verify a prompt against DSL semantics.
+
+        Args:
+            prompt: The prompt to verify
+            use_full: Override verification level. If None, uses config.verification_level
+
+        Returns:
+            List of violations/issues found
+        """
+        if self._verifier is None:
+            return []
+
+        # Determine verification level
+        if use_full is None:
+            use_full = self.config.verification_level == "full"
+
+        if use_full:
+            # Full Z3 verification via LLM logic extraction
+            result = self._verifier.verify(prompt, debug=self.config.verbose)
+            violations = []
+            if not result.equivalent:
+                violations.extend(result.missing_in_prompt)
+                violations.extend(result.extra_in_prompt)
+                if result.counterexamples:
+                    violations.append(f"Counterexamples found: {len(result.counterexamples)}")
+            return violations
+        else:
+            # Quick structural check
+            return self._verifier.verify_constraints(prompt)
+
     def optimize(
         self,
         reasoning_context: Dict[str, Any],
         eval_examples: List[Dict],
-        dsl_instructions: str = ""
+        dsl_instructions: str = "",
+        ast: List = None,
     ) -> str:
         """
         Run PDO optimization to find best prompt.
@@ -64,10 +117,15 @@ class CantoPDO:
             reasoning_context: Output from DeLPReasoningAnalyzer or format_reasoning_context
             eval_examples: List of evaluation examples (label-free)
             dsl_instructions: Instructions from DSL file to include in generated prompts
+            ast: Optional AST nodes for FOL verification feedback
 
         Returns:
             Optimized prompt string
         """
+        # Setup FOL verification if AST provided
+        if ast is not None and self._verifier is None:
+            self.set_fol_from_ast(ast)
+
         # Format context if needed
         if 'rules' not in reasoning_context:
             context = format_reasoning_context(reasoning_context, dsl_instructions)
@@ -98,14 +156,40 @@ class CantoPDO:
                 top_win_rate = self._get_top_win_rate()
                 rounds_iter.set_postfix(win_rate=f"{top_win_rate:.2f}", pool=len(self.instruction_pool))
 
-        # Select best prompt
+        # Select best prompt with final verification
         rankings = self._compute_rankings()
-        best_idx = rankings[0]
+        best_prompt = None
+
+        # For "final_only" or "full" mode, do full Z3 verification on top candidates
+        if self.config.verification_level in ("full", "final_only") and self._verifier is not None:
+            if self.config.verbose:
+                print(f"\nRunning final Z3 verification on top candidates...")
+
+            for idx in rankings:
+                candidate = self.instruction_pool[idx]
+                violations = self.verify_prompt(candidate, use_full=True)
+
+                if not violations:
+                    best_prompt = candidate
+                    if self.config.verbose:
+                        print(f"  ✓ Candidate {idx} passed full Z3 verification")
+                    break
+                else:
+                    if self.config.verbose:
+                        print(f"  ✗ Candidate {idx} has {len(violations)} violation(s)")
+
+            # If no candidate passed, use the best one anyway with a warning
+            if best_prompt is None:
+                best_prompt = self.instruction_pool[rankings[0]]
+                if self.config.verbose:
+                    print(f"  ⚠ No candidate passed full verification, using best ranking")
+        else:
+            best_prompt = self.instruction_pool[rankings[0]]
 
         if self.config.verbose:
             print(f"\nOptimization complete. Best prompt selected.")
 
-        return self.instruction_pool[best_idx]
+        return best_prompt
 
     def _summarize_dataset(self, examples: List[Dict]) -> str:
         """Generate dataset summary using LLM"""
@@ -252,16 +336,23 @@ OUTPUT: Return JSON with {vars_str}."""
             example = examples[np.random.randint(len(examples))]
             input_text = example.get('input', example.get('question', ''))
 
+            # Get the template prompts (before substitution) for FOL verification
+            template_a = self.instruction_pool[idx_a]
+            template_b = self.instruction_pool[idx_b]
+
             # Execute both prompts
-            prompt_a = self.instruction_pool[idx_a].replace('{user_input}', input_text)
-            prompt_b = self.instruction_pool[idx_b].replace('{user_input}', input_text)
+            prompt_a = template_a.replace('{user_input}', input_text)
+            prompt_b = template_b.replace('{user_input}', input_text)
 
             try:
                 response_a = str(self.lm(prompt_a))
                 response_b = str(self.lm(prompt_b))
 
-                # Judge
-                winner = self._judge_responses(input_text, response_a, response_b, context)
+                # Judge (pass templates for FOL verification)
+                winner = self._judge_responses(
+                    input_text, response_a, response_b, context,
+                    prompt_a=template_a, prompt_b=template_b
+                )
 
                 # Update win matrix
                 if winner == 'A':
@@ -272,8 +363,20 @@ OUTPUT: Return JSON with {vars_str}."""
                     self.win_matrix[idx_a, idx_b] += 0.5
                     self.win_matrix[idx_b, idx_a] += 0.5
 
+                if self.config.verbose:
+                    wins_a = np.sum(self.win_matrix[idx_a, :])
+                    wins_b = np.sum(self.win_matrix[idx_b, :])
+                    print(f"  [DUEL] {idx_a} vs {idx_b} → Winner: {winner} (scores: {wins_a:.1f} vs {wins_b:.1f})")
+
             except Exception as e:
                 logger.warning(f"Duel failed: {e}")
+                if self.config.verbose:
+                    wins_a = np.sum(self.win_matrix[idx_a, :])
+                    wins_b = np.sum(self.win_matrix[idx_b, :])
+                    print(f"\n  [DUEL FAILED] {e}")
+                    print(f"    Prompt A (idx={idx_a}, wins={wins_a}): {template_a[:80]}...")
+                    print(f"    Prompt B (idx={idx_b}, wins={wins_b}): {template_b[:80]}...")
+                    print(f"    Input: {input_text[:80]}...")
 
     def _sample_pair(self, n: int) -> tuple:
         """Sample pair using Thompson sampling with exploration"""
@@ -299,14 +402,51 @@ OUTPUT: Return JSON with {vars_str}."""
         input_text: str,
         response_a: str,
         response_b: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        prompt_a: str = "",
+        prompt_b: str = "",
     ) -> str:
-        """Use LLM judge to compare responses"""
+        """
+        Use LLM judge to compare responses.
+
+        Includes FOL verification as part of the evaluation - prompts
+        with fewer DSL violations are preferred.
+        """
+        # FOL verification bonus: fewer violations = better
+        fol_bonus_a = 0.0
+        fol_bonus_b = 0.0
+
+        if self._verifier is not None and prompt_a and prompt_b:
+            # For "final_only" mode, use quick verification during optimization
+            use_full = self.config.verification_level == "full"
+            violations_a = self.verify_prompt(prompt_a, use_full=use_full)
+            violations_b = self.verify_prompt(prompt_b, use_full=use_full)
+
+            # Award bonus for fewer violations
+            if len(violations_a) < len(violations_b):
+                fol_bonus_a = 0.3  # Significant advantage
+            elif len(violations_b) < len(violations_a):
+                fol_bonus_b = 0.3
+
+            # Perfect score (0 violations) gets extra bonus
+            if len(violations_a) == 0:
+                fol_bonus_a += 0.2
+            if len(violations_b) == 0:
+                fol_bonus_b += 0.2
+
         # Randomize order to avoid position bias
         if np.random.random() < 0.5:
             first, second = ('A', response_a), ('B', response_b)
+            first_bonus, second_bonus = fol_bonus_a, fol_bonus_b
         else:
             first, second = ('B', response_b), ('A', response_a)
+            first_bonus, second_bonus = fol_bonus_b, fol_bonus_a
+
+        # Build FOL feedback for judge if available
+        fol_section = ""
+        if self._verifier is not None:
+            fol_section = """
+3. DSL Semantic Compliance (20%) - How well does the prompt match the original DSL rules?"""
 
         judge_prompt = f"""You are an impartial referee evaluating two competing responses.
 
@@ -320,8 +460,8 @@ OUTPUT: Return JSON with {vars_str}."""
 {second[1]}
 
 ## Evaluation Criteria
-1. Correctness (50%) - Does the answer match task requirements?
-2. Reasoning Quality (50%) - Is the logic coherent and complete?
+1. Correctness (40%) - Does the answer match task requirements?
+2. Reasoning Quality (40%) - Is the logic coherent and complete?{fol_section}
 
 ## Output Format
 Return JSON with "reasoning" and "winner" (X or Y):
@@ -331,11 +471,30 @@ Return JSON with "reasoning" and "winner" (X or Y):
             response = str(self.lm(judge_prompt))
             if '"winner"' in response.lower():
                 if '"x"' in response.lower() or "'x'" in response.lower():
-                    return first[0]
+                    base_winner = first[0]
                 elif '"y"' in response.lower() or "'y'" in response.lower():
-                    return second[0]
+                    base_winner = second[0]
+                else:
+                    base_winner = None
+
+                # Apply FOL bonus - may flip result if one has significant FOL advantage
+                if base_winner is not None:
+                    if base_winner == first[0] and second_bonus > first_bonus + 0.3:
+                        # FOL verification strongly favors second
+                        return second[0]
+                    elif base_winner == second[0] and first_bonus > second_bonus + 0.3:
+                        # FOL verification strongly favors first
+                        return first[0]
+                    return base_winner
+
         except:
             pass
+
+        # Tie-break using FOL verification
+        if fol_bonus_a > fol_bonus_b:
+            return 'A'
+        elif fol_bonus_b > fol_bonus_a:
+            return 'B'
 
         return 'TIE'
 
@@ -365,7 +524,31 @@ Return JSON with "reasoning" and "winner" (X or Y):
         self._resize_win_matrix(len(new_pool), keep_count)
 
     def _mutate_instruction(self, instruction: str, tip: str, context: Dict[str, Any]) -> Optional[str]:
-        """Generate mutation of an instruction"""
+        """
+        Generate mutation of an instruction with FOL feedback.
+
+        FOL feedback identifies where the prompt diverges from DSL semantics:
+        - Missing variables: DSL variables not mentioned in the prompt
+        - Missing categories: Semantic patterns not referenced
+        - Missing precedence: Override relationships not expressed
+
+        By including these violations in the mutation prompt, the LLM can
+        fix semantic gaps while improving the instruction.
+        """
+        # Get FOL violations - these indicate where prompt doesn't match DSL
+        fol_feedback = ""
+        if self._verifier is not None:
+            # For "final_only" mode, use quick verification during optimization
+            use_full = self.config.verification_level == "full"
+            violations = self.verify_prompt(instruction, use_full=use_full)
+            if violations:
+                fol_feedback = f"""
+# DSL Semantic Issues to Fix
+The current instruction is missing these elements from the original DSL specification.
+The mutation MUST address these to maintain semantic equivalence:
+{chr(10).join(f'- {v}' for v in violations)}
+"""
+
         prompt = f"""You are an expert prompt-engineer specializing in prompt optimization.
 Generate 1 diverse, high-quality mutation of the BEST PERFORMING instruction.
 
@@ -374,10 +557,11 @@ Generate 1 diverse, high-quality mutation of the BEST PERFORMING instruction.
 
 # Follow This Tip
 {tip}
-
+{fol_feedback}
 # Requirements
 - Keep the {{user_input}} placeholder
 - Maintain the core classification logic
+- Address any DSL semantic issues listed above
 
 Return exactly 1 mutated instruction as JSON:
 {{"mutated_prompt": "Your mutated instruction here"}}"""

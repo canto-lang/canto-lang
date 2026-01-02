@@ -38,3 +38,9 @@ class PDOConfig:
 
     # Output format
     verbose: bool = True
+
+    # Z3 verification level for DSL semantic compliance
+    # "full" - Full Z3 verification via LLM logic extraction (most accurate, slower)
+    # "quick" - Quick string matching for variables/categories (faster, less accurate)
+    # "final_only" - Quick during optimization, full verification on final result
+    verification_level: str = "full"

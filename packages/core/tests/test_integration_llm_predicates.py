@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.delp.analyzer import DeLPReasoningAnalyzer
 
 def test_llm_predicate_injection():
@@ -27,8 +27,7 @@ def test_llm_predicate_injection():
     """
 
     ast = parse_string(dsl)
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
+    program = translate_to_fol(ast)
 
     # 2. Define "LLM-generated" predicates
     # This predicate says: is_like(Text, category) is true if Text contains 'magic_word'

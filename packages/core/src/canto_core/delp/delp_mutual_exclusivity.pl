@@ -65,12 +65,16 @@ extract_condition_category(length_where_like_lt(Var, _, Cat, _), Var, Cat).
 extract_condition_category(length_where_like_gte(Var, _, Cat, _), Var, Cat).
 extract_condition_category(length_where_like_lte(Var, _, Cat, _), Var, Cat).
 
-% Handle De Morgan OR: \+ ((\+(A)), (\+(B)), ...)
-% This is A OR B OR ... transformed via De Morgan's law
+% Handle negation - first try direct extraction from inner condition
+% This handles \+(has_any_like(...)) which is semantically "has none like"
 extract_condition_category(\+(Inner), Var, Cat) :-
-    extract_from_demorgan_or(Inner, Var, Cat).
+    (   extract_condition_category(Inner, Var, Cat)  % Simple negation of category condition
+    ;   extract_from_demorgan_or(Inner, Var, Cat)    % De Morgan OR structure
+    ).
 extract_condition_category(\\+(Inner), Var, Cat) :-
-    extract_from_demorgan_or(Inner, Var, Cat).
+    (   extract_condition_category(Inner, Var, Cat)
+    ;   extract_from_demorgan_or(Inner, Var, Cat)
+    ).
 
 /**
  * extract_from_demorgan_or(+Conjunction, -Variable, -Category)
@@ -120,6 +124,10 @@ extract_from_demorgan_or(\\+(Inner), Var, Cat) :-
  * Conservative behavior: If we can't prove exclusivity, assume potential conflict.
  */
 bodies_mutually_exclusive(Body1, Body2) :-
+    % Check for quantifier implications first (e.g., has_all vs not(has_any))
+    quantifier_implications_exclusive(Body1, Body2),
+    !.
+bodies_mutually_exclusive(Body1, Body2) :-
     % Both bodies must be "category-complete" (all OR branches have categories)
     body_is_category_complete(Body1),
     body_is_category_complete(Body2),
@@ -132,6 +140,78 @@ bodies_mutually_exclusive(Body1, Body2) :-
     % Check if categories are exclusive (no overlap on same variable)
     categories_are_exclusive(Cats1, Cats2),
     !.
+
+%% ============================================================================
+%% Quantifier Implication Exclusivity
+%% ============================================================================
+
+/**
+ * quantifier_implications_exclusive(+Body1, +Body2)
+ * True if bodies are mutually exclusive due to quantifier implications:
+ * - has_all_like(L, C) implies has_any_like(L, C)
+ *   So: has_all_like(L, C) and \+(has_any_like(L, C)) are exclusive
+ * - has_none_like(L, C) implies \+(has_any_like(L, C))
+ *   So: has_none_like(L, C) and has_any_like(L, C) are exclusive
+ * - has_all_like(L, C) implies \+(has_none_like(L, C))
+ *   So: has_all_like(L, C) and has_none_like(L, C) are exclusive
+ */
+quantifier_implications_exclusive(Body1, Body2) :-
+    member(Cond1, Body1),
+    member(Cond2, Body2),
+    conditions_exclusive_by_quantifier(Cond1, Cond2),
+    !.
+
+/**
+ * conditions_exclusive_by_quantifier(+Cond1, +Cond2)
+ * True if two conditions are mutually exclusive due to quantifier logic.
+ */
+% has_all_like implies has_any_like, so has_all vs not(has_any) are exclusive
+conditions_exclusive_by_quantifier(has_all_like(L, C), \+(has_any_like(L, C))).
+conditions_exclusive_by_quantifier(\+(has_any_like(L, C)), has_all_like(L, C)).
+conditions_exclusive_by_quantifier(has_all_like(L, C), \\+(has_any_like(L, C))).
+conditions_exclusive_by_quantifier(\\+(has_any_like(L, C)), has_all_like(L, C)).
+
+% has_none_like is equivalent to not(has_any_like), so has_none vs has_any are exclusive
+conditions_exclusive_by_quantifier(has_none_like(L, C), has_any_like(L, C)).
+conditions_exclusive_by_quantifier(has_any_like(L, C), has_none_like(L, C)).
+
+% not(has_any_like) and has_any_like are obviously exclusive
+conditions_exclusive_by_quantifier(\+(has_any_like(L, C)), has_any_like(L, C)).
+conditions_exclusive_by_quantifier(has_any_like(L, C), \+(has_any_like(L, C))).
+conditions_exclusive_by_quantifier(\\+(has_any_like(L, C)), has_any_like(L, C)).
+conditions_exclusive_by_quantifier(has_any_like(L, C), \\+(has_any_like(L, C))).
+
+% has_all and has_none are mutually exclusive (can't have all matching AND none matching)
+conditions_exclusive_by_quantifier(has_all_like(L, C), has_none_like(L, C)).
+conditions_exclusive_by_quantifier(has_none_like(L, C), has_all_like(L, C)).
+
+% Same patterns for eq variants
+conditions_exclusive_by_quantifier(has_all_eq(L, V), \+(has_any_eq(L, V))).
+conditions_exclusive_by_quantifier(\+(has_any_eq(L, V)), has_all_eq(L, V)).
+conditions_exclusive_by_quantifier(has_all_eq(L, V), \\+(has_any_eq(L, V))).
+conditions_exclusive_by_quantifier(\\+(has_any_eq(L, V)), has_all_eq(L, V)).
+conditions_exclusive_by_quantifier(has_none_eq(L, V), has_any_eq(L, V)).
+conditions_exclusive_by_quantifier(has_any_eq(L, V), has_none_eq(L, V)).
+conditions_exclusive_by_quantifier(has_all_eq(L, V), has_none_eq(L, V)).
+conditions_exclusive_by_quantifier(has_none_eq(L, V), has_all_eq(L, V)).
+conditions_exclusive_by_quantifier(\+(has_any_eq(L, V)), has_any_eq(L, V)).
+conditions_exclusive_by_quantifier(has_any_eq(L, V), \+(has_any_eq(L, V))).
+conditions_exclusive_by_quantifier(\\+(has_any_eq(L, V)), has_any_eq(L, V)).
+conditions_exclusive_by_quantifier(has_any_eq(L, V), \\+(has_any_eq(L, V))).
+
+% Same patterns for neq variants
+conditions_exclusive_by_quantifier(has_all_neq(L, V), \+(has_any_neq(L, V))).
+conditions_exclusive_by_quantifier(\+(has_any_neq(L, V)), has_all_neq(L, V)).
+conditions_exclusive_by_quantifier(has_all_neq(L, V), \\+(has_any_neq(L, V))).
+conditions_exclusive_by_quantifier(\\+(has_any_neq(L, V)), has_all_neq(L, V)).
+conditions_exclusive_by_quantifier(has_none_neq(L, V), has_any_neq(L, V)).
+conditions_exclusive_by_quantifier(has_any_neq(L, V), has_none_neq(L, V)).
+conditions_exclusive_by_quantifier(has_all_neq(L, V), has_none_neq(L, V)).
+conditions_exclusive_by_quantifier(has_none_neq(L, V), has_all_neq(L, V)).
+conditions_exclusive_by_quantifier(\+(has_any_neq(L, V)), has_any_neq(L, V)).
+conditions_exclusive_by_quantifier(has_any_neq(L, V), \+(has_any_neq(L, V))).
+conditions_exclusive_by_quantifier(\\+(has_any_neq(L, V)), has_any_neq(L, V)).
+conditions_exclusive_by_quantifier(has_any_neq(L, V), \\+(has_any_neq(L, V))).
 
 /**
  * body_is_category_complete(+Body)

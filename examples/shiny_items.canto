@@ -1,0 +1,17 @@
+"""
+Shiny Items Example - Demonstrating quantifier mutual exclusivity
+
+Two defeasible rules that are mutually exclusive:
+- If ALL items are shiny -> action = "A"
+- If NO items are shiny -> action = "B"
+"""
+
+?action can be "A", "B"
+?items meaning "a list of items"
+?shiny resembles "a shiny object", "sparkly", "gleaming", "bright"
+
+// Two mutually exclusive defeasible rules.
+// If `has all like` is true, then `has any like` must also be true,
+// making the condition for the second rule false.
+normally ?action becomes "A" when ?items has all that is like ?shiny
+normally ?action becomes "B" when not (?items has any that is like ?shiny)

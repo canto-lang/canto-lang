@@ -1,0 +1,63 @@
+You are classifying short texts into one of two mutually exclusive types: “fruit” or “vehicle”. The conditions for assigning each type are based on how similar the text is to representative example terms.
+
+From the DSL instructions:
+- This is a false-positive conflict test: the conditions for “fruit” and “vehicle” are mutually exclusive in practice.
+- The rules use different semantic categories, so only one rule should effectively apply at a time.
+- You should NOT treat this as a conflict and you should NOT warn about conflicts. Simply choose the appropriate category.
+
+Task:
+Given an input text, decide whether it is best categorized as a “fruit” or as a “vehicle”.
+
+Classification logic (consolidated guidance):
+- Classify as fruit when the input refers to a fruit or is clearly about something like the example fruit terms:
+  - Examples of fruit terms: “apple”, “orange”, “banana”, “grape”.
+  - Also include simple variants, such as plurals or with adjectives:
+    - Positive examples (fruit):
+      - Input: “apple” → result: “fruit”
+      - Input: “a ripe banana” → result: “fruit”
+      - Input: “sweet oranges” → result: “fruit”
+- Classify as vehicle when the input refers to a vehicle or is clearly about something like the example vehicle terms:
+  - Examples of vehicle terms: “car”, “truck”, “bike”, “bus”.
+  - Also include simple variants:
+    - Positive examples (vehicle):
+      - Input: “car” → result: “vehicle”
+      - Input: “a red truck” → result: “vehicle”
+      - Input: “I rode my bike” → result: “vehicle”
+      - Input: “the city bus” → result: “vehicle”
+
+Important disambiguation rules:
+- Important: Do NOT treat this as a logical conflict test. Even if both a fruit word and a vehicle word appear in the same sentence, focus on what is actually being classified and choose the single best category.
+  - Example (no conflict warning):
+    - Input: “I put apples in my car” and we are classifying “car” as the main referent → result: “vehicle”.
+    - Input: “This bus is full of oranges” and we are classifying “bus” as the main referent → result: “vehicle”.
+    - Input: “I like apples and bikes” and we are classifying “apple” as the main referent → result: “fruit”.
+- If the input clearly names exactly one item from the examples or a close variant, use that item’s category, even if other words are present that are not fruits or vehicles.
+- If the input mentions both a fruit and a vehicle but does not specify which one is the subject, choose the term that appears as the main noun or focus of the phrase.
+  - Positive example:
+    - “My bike with grape stickers” → the main object is “bike” → result: “vehicle”.
+- Negative behavior (what NOT to do):
+  - Do NOT output both labels at once (e.g., do not say “fruit and vehicle”).
+  - Do NOT output warnings about conflicts or ambiguity.
+  - Do NOT invent new categories such as “food”, “transportation”, or “other”.
+  - Do NOT answer with explanations; only provide the final label in the requested format.
+
+Handling edge cases:
+- If the input is clearly neither similar to the fruit examples nor the vehicle examples, still choose the closer of the two, based on everyday meaning:
+  - Example:
+    - Input: “motorbike” → more similar to “bike” → treat as “vehicle”.
+- Avoid saying that you “cannot decide” or “need more information”. For the purposes of this task, always choose exactly one: “fruit” or “vehicle”.
+
+Output requirements:
+- Use only the following two fields in your final answer:
+  - input: the original user input text.
+  - result: either “fruit” or “vehicle”.
+- Provide no extra commentary or fields in the final answer.
+
+Now read the user input and perform the classification.
+
+INPUT: {user_input}
+
+Respond ONLY in this exact structure (no additional text):
+
+input: "<the exact input text you received>"
+result: "<either fruit or vehicle>"

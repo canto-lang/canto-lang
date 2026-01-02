@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string
 from canto_core.ast_nodes import HasDeclaration, VariableDeclaration, Rule
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.parser.semantic_analyzer import analyze, PredicateKind
 
 
@@ -146,8 +146,7 @@ class TestHasTranslation:
         ?patient has a ?diagnosis meaning "the diagnosis"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         assert len(program.has_relationships) == 1
         key = "patient_diagnosis"
@@ -163,8 +162,7 @@ class TestHasTranslation:
         ?patient has a list of ?medications meaning "meds"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         key = "patient_medications"
         assert key in program.has_relationships
@@ -178,8 +176,7 @@ class TestHasTranslation:
         ?patient has a list of ?symptoms meaning "symptoms"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         assert "has_property(patient, name, single)" in prolog_str
@@ -299,8 +296,7 @@ class TestHasIntegration:
         assert result.is_valid
 
         # Translate and check
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         # Should have has relationships
         assert len(program.has_relationships) == 4
@@ -443,8 +439,7 @@ class TestHasPrologOutput:
             when ?symptoms has "chest pain"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         assert "has(symptoms, 'chest pain')" in prolog_str
@@ -458,8 +453,7 @@ class TestHasPrologOutput:
             when ?symptoms has "chest pain"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         assert ":- dynamic has/2." in prolog_str

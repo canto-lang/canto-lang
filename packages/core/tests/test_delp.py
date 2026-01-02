@@ -9,15 +9,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.delp import create_janus_engine
 
 
 # Helper function for backwards compatibility
 def translate_to_delp(ast):
-    """Wrapper for DeLPTranslator"""
-    translator = DeLPTranslator()
-    return translator.translate(ast)
+    """Wrapper that uses translate_to_fol"""
+    return translate_to_fol(ast)
 
 
 class TestArgumentConstruction:

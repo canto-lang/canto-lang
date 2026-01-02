@@ -20,7 +20,6 @@ from .prompt import PromptGenerator
 from .codegen import (
     translate_to_delp,
     DeLPProgram,
-    DeLPTranslator,
     LLMPredicateGenerator,
     configure_dspy,
     PrologSyntaxVerifier,
@@ -30,6 +29,7 @@ from .codegen import (
     PDOConfig,
     format_reasoning_context,
 )
+from .fol import translate_to_fol, CantoFOL
 
 # Optional DeLP imports (requires janus-swi)
 try:
@@ -62,8 +62,10 @@ __all__ = [
     # Codegen
     'translate_to_delp',
     'DeLPProgram',
-    'DeLPTranslator',
     'LLMPredicateGenerator',
+    # FOL
+    'translate_to_fol',
+    'CantoFOL',
     'configure_dspy',
     'PrologSyntaxVerifier',
     'verify_prolog_code',

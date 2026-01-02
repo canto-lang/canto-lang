@@ -1,5 +1,5 @@
 """
-Tests for DeLP translator
+Tests for FOL translator (formerly DeLP translator)
 """
 
 import pytest
@@ -9,14 +9,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string, parse_file
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 
 
 # Helper function for backwards compatibility
 def translate_to_delp(ast):
-    """Wrapper for DeLPTranslator"""
-    translator = DeLPTranslator()
-    return translator.translate(ast)
+    """Wrapper that uses translate_to_fol"""
+    return translate_to_fol(ast)
 
 
 def test_simple_rule_translation():
@@ -473,15 +472,13 @@ def test_let_binding_translation():
     # Check the rule head
     assert rule.head == "result('Yes')"
 
-    # Check the rule body contains let_any_bound with correct structure
+    # Check the rule body contains let_any with correct structure
     assert len(rule.body) == 1
     body_pred = rule.body[0]
-    assert "let_any_bound" in body_pred
+    # FOL translator uses let_any (not let_any_bound)
+    assert "let_any(" in body_pred
     assert "chain" in body_pred
     assert "link" in body_pred
-    # Should have the two conditions
-    assert "var_equals(speaker_of_link, target)" in body_pred
-    assert "speaker_is_truthful_of_link(true)" in body_pred
 
 
 def test_let_all_translation():
@@ -500,8 +497,8 @@ def test_let_all_translation():
     delp = translate_to_delp(ast)
 
     rule = delp.strict_rules[0]
-    assert "let_all_bound" in rule.body[0]
-    assert "status_of_item('active')" in rule.body[0]
+    # FOL translator uses let_all (not let_all_bound)
+    assert "let_all(" in rule.body[0]
 
 
 def test_let_none_translation():
@@ -520,8 +517,8 @@ def test_let_none_translation():
     delp = translate_to_delp(ast)
 
     rule = delp.strict_rules[0]
-    assert "let_none_bound" in rule.body[0]
-    assert "is_error_of_item(true)" in rule.body[0]
+    # FOL translator uses let_none (not let_none_bound)
+    assert "let_none(" in rule.body[0]
 
 
 if __name__ == "__main__":

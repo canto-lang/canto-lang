@@ -20,8 +20,9 @@ from pathlib import Path
 
 from canto_core import parse_file
 from canto_core.parser.semantic_analyzer import analyze as semantic_analyze
-from canto_core import DeLPTranslator, LLMPredicateGenerator, configure_dspy
+from canto_core import LLMPredicateGenerator, configure_dspy
 from canto_core import DeLPReasoningAnalyzer
+from canto_core.fol import translate_to_fol, Z3Verifier
 
 from dotenv import load_dotenv
 
@@ -72,16 +73,51 @@ def build_pipeline(canto_file: str, verbose: bool = False, optimize: bool = Fals
             print(f"  - {warning}")
     print(f"  Semantic analysis passed\n")
 
+    # Z3 Static Verification
+    print("=" * 60)
+    print("STATIC VERIFICATION (Z3)")
+    print("=" * 60)
+    print()
+
+    print("Translating to FOL IR...")
+    fol = translate_to_fol(ast, source_file=str(dsl_file))
+    print(f"  Variables: {len(fol.variables)}")
+    print(f"  Categories: {len(fol.categories)}")
+    print(f"  Strict rules: {len(fol.strict_rules)}")
+    print(f"  Defeasible rules: {len(fol.defeasible_rules)}")
+    print(f"  Superiority relations: {len(fol.superiority)}")
+    print()
+
+    print("Running Z3 verification...")
+    verifier = Z3Verifier(fol)
+    z3_results = verifier.verify_all()
+
+    all_passed = True
+    for check_name, (passed, details) in z3_results.items():
+        status = "✓" if passed else "✗"
+        print(f"  {status} {check_name}")
+        if not passed and details:
+            all_passed = False
+            if isinstance(details, dict) and 'message' in details:
+                print(f"      {details['message']}")
+            elif isinstance(details, list):
+                print(f"      Cycle: {' -> '.join(details)}")
+
+    if all_passed:
+        print("\n  All Z3 checks passed!")
+    else:
+        print("\n  Some Z3 checks failed (warnings only, build continues)")
+    print()
+
     # Step 1: Compile DSL to Prolog KB
     print("=" * 60)
     print("STEP 1: COMPILATION (DSL -> Prolog KB)")
     print("=" * 60)
     print()
 
-    print("Running deterministic translator...")
-    translator = DeLPTranslator()
-    program = translator.translate(ast)
-    print(f"  Translated to DeLP program")
+    print("Running FOL translator...")
+    program = translate_to_fol(ast)
+    print(f"  Translated to FOL IR")
     print(f"  - {len(program.declarations)} variable declarations")
     print(f"  - {len(program.semantic_categories)} semantic categories")
     print(f"  - {len(program.strict_rules)} strict rules")
@@ -188,10 +224,12 @@ def build_pipeline(canto_file: str, verbose: bool = False, optimize: bool = Fals
 
     # Generate prompt template
     # Pass program to auto-detect OUTPUT variables
+    # Pass AST for FOL verification feedback
     prompt_template = prompt_generator.generate_from_structure(
         reasoning_structure=reasoning_structure,
         dsl_instructions=instructions,
-        program=program  # Auto-detects variables marked with OUTPUT
+        program=program,  # Auto-detects variables marked with OUTPUT
+        ast=ast,  # Enables FOL verification during generation
     )
 
     print(f"  Prompt template generated")
@@ -243,12 +281,13 @@ def build_pipeline(canto_file: str, verbose: bool = False, optimize: bool = Fals
             verbose=True
         )
 
-        # Run optimization
+        # Run optimization with FOL verification feedback
         optimizer = CantoPDO(config=config)
         optimized_prompt = optimizer.optimize(
             reasoning_context=reasoning_structure,
             eval_examples=eval_examples,
-            dsl_instructions=instructions
+            dsl_instructions=instructions,
+            ast=ast,  # Enables FOL verification during optimization
         )
 
         print()

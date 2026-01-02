@@ -31,7 +31,7 @@ truth values through the claims.
 // Final answer based on target's truth value
 ?answer can be "Yes", "No"
 
-// Find target in chain and use their computed truth value
+// Find target in chain and use their computed truth value (strict rules - higher priority)
 // Uses let binding to ensure both conditions check the SAME link in the chain
 ?answer becomes "Yes"
     when let ?link be any in ?chain of ?puzzle where
@@ -43,11 +43,12 @@ truth values through the claims.
         ?speaker of ?link is ?target_person of ?puzzle
         and ?speaker_is_truthful of ?link is false
 
-// If target is the base person, use base truth value directly
-?answer becomes "Yes"
+// If target is the base person, use base truth value directly (defeasible - fallback)
+// Chain lookup takes priority since strict beats defeasible
+normally ?answer becomes "Yes"
     when ?target_person of ?puzzle is ?base_person of ?puzzle
     and ?base_is_truthful of ?puzzle is true
 
-?answer becomes "No"
+normally ?answer becomes "No"
     when ?target_person of ?puzzle is ?base_person of ?puzzle
     and ?base_is_truthful of ?puzzle is false

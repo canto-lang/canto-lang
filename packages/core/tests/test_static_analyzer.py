@@ -5,7 +5,7 @@ Tests compile-time validation of DeLP programs
 """
 
 from canto_core.parser.dsl_parser import parse_string
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.delp import create_janus_engine
 
 print("=" * 70)
@@ -36,8 +36,7 @@ NORMALLY $vaccine_flag IS True
 
 try:
     ast = parse_string(valid_dsl)
-    translator = DeLPTranslator()
-    delp = translator.translate(ast)
+    delp = translate_to_fol(ast)
 
     engine = create_janus_engine(delp)
     engine.load()
@@ -119,8 +118,7 @@ $flag IS False
 
 try:
     ast = parse_string(contradictory_dsl)
-    translator = DeLPTranslator()
-    delp = translator.translate(ast)
+    delp = translate_to_fol(ast)
 
     engine = create_janus_engine(delp)
     engine.load()
@@ -149,8 +147,7 @@ try:
     from canto_core.delp.analyzer import DeLPReasoningAnalyzer
 
     ast = parse_string(valid_dsl)
-    translator = DeLPTranslator()
-    delp = translator.translate(ast)
+    delp = translate_to_fol(ast)
 
     analyzer = DeLPReasoningAnalyzer(delp)
     analysis = analyzer.analyze()

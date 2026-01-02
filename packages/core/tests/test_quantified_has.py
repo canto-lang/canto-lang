@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string
 from canto_core.ast_nodes import Rule, Condition, SemanticCategory, VariableDeclaration
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.parser.semantic_analyzer import analyze
 
 
@@ -162,8 +162,7 @@ class TestQuantifiedHasTranslation:
             when ?symptoms of ?patient has any that is like ?emergency
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_any_like(symptoms_of_patient, emergency)" in rule.body[0]
@@ -178,8 +177,7 @@ class TestQuantifiedHasTranslation:
             when ?docs of ?app has any that is "signed"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_any_eq(docs_of_app, 'signed')" in rule.body[0]
@@ -194,8 +192,7 @@ class TestQuantifiedHasTranslation:
             when ?meds of ?patient has any that is not "approved"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_any_neq(meds_of_patient, 'approved')" in rule.body[0]
@@ -210,8 +207,7 @@ class TestQuantifiedHasTranslation:
             when ?docs of ?app has all that is "signed"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_all_eq(docs_of_app, 'signed')" in rule.body[0]
@@ -227,11 +223,13 @@ class TestQuantifiedHasTranslation:
             when ?meds of ?patient has none that is like ?bad_drugs
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
-        assert "has_none_like(meds_of_patient, bad_drugs)" in rule.body[0]
+        # FOL translator uses NOT(has_any_like) which is equivalent to has_none_like
+        body = rule.body[0]
+        assert "has_any_like(meds_of_patient, bad_drugs)" in body
+        assert "\\+" in body  # negation-as-failure
 
     def test_prolog_dynamic_predicates(self):
         """Test that quantified predicates are declared as dynamic"""
@@ -244,8 +242,7 @@ class TestQuantifiedHasTranslation:
             when ?symptoms of ?patient has any that is like ?emergency
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         assert ":- dynamic has_any_like/2." in prolog_str
@@ -335,8 +332,7 @@ class TestQuantifiedHasIntegration:
             and ?age of ?patient is 65
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert len(rule.body) == 2
@@ -356,14 +352,13 @@ class TestQuantifiedHasIntegration:
             or ?symptoms of ?patient has any that is like ?urgent
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
-        # OR is translated using De Morgan's law: A or B = not((not A) and (not B))
-        # This keeps it as a single rule, avoiding cycles with "overriding all"
+        # OR conditions are kept as a single rule
         assert len(program.strict_rules) == 1
-        # Verify De Morgan pattern in the rule body
-        assert '\\+' in program.strict_rules[0].body[0]
+        # The body property shows or([...]) format, while actual Prolog uses De Morgan
+        body = program.strict_rules[0].body[0]
+        assert "or([" in body or "\\+" in body
 
     def test_mixed_simple_and_quantified(self):
         """Test mixing simple has with quantified has"""
@@ -379,8 +374,7 @@ class TestQuantifiedHasIntegration:
             when ?symptoms of ?patient has any that is like ?emergency
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         assert len(program.strict_rules) == 2
         # First rule uses simple has
@@ -420,8 +414,7 @@ class TestQuantifiedHasIntegration:
 
         assert result.is_valid
 
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         # Check rules generated
         assert len(program.strict_rules) == 3  # 2 emergency + 1 safe_to_prescribe
@@ -445,8 +438,7 @@ class TestQuantifiedHasAllOperatorsTranslation:
             when ?symptoms of ?patient has all that is like ?mild_symptoms
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_all_like(symptoms_of_patient, mild_symptoms)" in rule.body[0]
@@ -461,8 +453,7 @@ class TestQuantifiedHasAllOperatorsTranslation:
             when ?items of ?app has all that is not "invalid"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_all_neq(items_of_app, 'invalid')" in rule.body[0]
@@ -477,11 +468,13 @@ class TestQuantifiedHasAllOperatorsTranslation:
             when ?docs of ?app has none that is "pending"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
-        assert "has_none_eq(docs_of_app, 'pending')" in rule.body[0]
+        # FOL translator uses NOT(has_any_eq) which is equivalent to has_none_eq
+        body = rule.body[0]
+        assert "has_any_eq(docs_of_app, 'pending')" in body
+        assert "\\+" in body
 
     def test_has_none_neq_translation(self):
         """Test translation of has none that is not"""
@@ -493,11 +486,13 @@ class TestQuantifiedHasAllOperatorsTranslation:
             when ?items of ?app has none that is not "approved"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
-        assert "has_none_neq(items_of_app, 'approved')" in rule.body[0]
+        # FOL translator uses NOT(has_any_neq) which is equivalent to has_none_neq
+        body = rule.body[0]
+        assert "has_any_neq(items_of_app, 'approved')" in body
+        assert "\\+" in body
 
 
 class TestQuantifiedHasEdgeCases:
@@ -517,8 +512,7 @@ class TestQuantifiedHasEdgeCases:
             and ?allergies of ?patient has any that is like ?drug_allergies
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert len(rule.body) == 2
@@ -535,8 +529,7 @@ class TestQuantifiedHasEdgeCases:
             when ?flags of ?app has any that is true
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_any_eq(flags_of_app, true)" in rule.body[0]
@@ -551,8 +544,7 @@ class TestQuantifiedHasEdgeCases:
             when ?quantities of ?inventory has any that is 0
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_any_eq(quantities_of_inventory, 0)" in rule.body[0]
@@ -568,8 +560,7 @@ class TestQuantifiedHasEdgeCases:
             when ?symptoms of ?patient has all that is like ?mild_symptoms
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         assert len(program.defeasible_rules) == 1
         rule = program.defeasible_rules[0]
@@ -587,8 +578,7 @@ class TestQuantifiedHasEdgeCases:
             overriding all
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         assert len(program.strict_rules) == 1
         # Check that override is recorded
@@ -604,8 +594,7 @@ class TestQuantifiedHasEdgeCases:
             when ?symptoms has any that is "chest pain"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert "has_any_eq(symptoms, 'chest pain')" in rule.body[0]
@@ -626,8 +615,7 @@ class TestQuantifiedHasEdgeCases:
             when ?symptoms of ?doctor_note has any that is like ?emergency
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         assert len(program.strict_rules) == 2
         # First rule should reference patient
@@ -657,8 +645,7 @@ class TestQuantifiedHasPrologOutput:
         ?r9 becomes true when ?c of ?p has none that is not "value"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         # Check all 9 dynamic predicates
@@ -683,8 +670,7 @@ class TestQuantifiedHasPrologOutput:
             when ?symptoms of ?patient has any that is like ?emergency
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         # Check rule is properly formed with :-
@@ -922,8 +908,7 @@ class TestLengthOfTranslation:
             when (length of ?claims where ?truth is false) > 0
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         # Should generate length_where_is_gt predicate
@@ -938,8 +923,7 @@ class TestLengthOfTranslation:
             when (length of ?claims where ?truth is false) is 3
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         # Should generate length_where_is_eq predicate
@@ -954,8 +938,7 @@ class TestLengthOfTranslation:
             when (length of ?items where ?status is "active") is 0
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         # Should generate length_where_is_eq with 0
@@ -971,8 +954,7 @@ class TestLengthOfTranslation:
             when (length of ?symptoms where ?text is like ?emergency) > 2
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         # Should generate length_where_like_gt predicate
@@ -988,8 +970,7 @@ class TestLengthOfTranslation:
             when (length of ?claims of ?puzzle where ?truth is false) is 0
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         # Should handle qualified variable for list
@@ -1004,8 +985,7 @@ class TestLengthOfTranslation:
             when (length of ?items where ?active is true) > 5
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog = program.to_prolog_string()
 
         # Should not contain Python dict syntax

@@ -1,0 +1,14 @@
+[
+  {
+    "input": "I have a collection of items: a sparkly diamond, a gleaming gold coin, and a bright silver ring.",
+    "expected": "A"
+  },
+  {
+    "input": "I have these items: a rusty nail, a dull rock, and a faded cloth.",
+    "expected": "B"
+  },
+  {
+    "input": "My items are: a shiny new phone, a matte black case, and a bright screen protector.",
+    "expected": null
+  }
+]

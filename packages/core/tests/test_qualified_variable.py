@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from canto_core.parser.dsl_parser import parse_string
 from canto_core.ast_nodes import HasDeclaration, VariableDeclaration, Rule, Condition
-from canto_core.codegen import DeLPTranslator
+from canto_core.fol import translate_to_fol
 from canto_core.parser.semantic_analyzer import analyze, PredicateKind
 
 
@@ -107,8 +107,7 @@ class TestQualifiedVariableTranslation:
             when ?symptoms of ?patient has "chest pain"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         # Check the generated rule body
         rule = program.strict_rules[0]
@@ -127,8 +126,7 @@ class TestQualifiedVariableTranslation:
             when ?complaint of ?patient is like ?cardiac_terms
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         # Should be is_like(complaint_of_patient, cardiac_terms)
@@ -144,8 +142,7 @@ class TestQualifiedVariableTranslation:
             when ?symptoms of ?patient has "chest pain"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         # Check that the qualified variable appears correctly in Prolog
@@ -215,8 +212,7 @@ class TestQualifiedVariableIntegration:
             and ?age of ?patient is 65
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert len(rule.body) == 2
@@ -234,8 +230,7 @@ class TestQualifiedVariableIntegration:
             or ?symptoms of ?patient has "difficulty breathing"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         # OR is translated using De Morgan's law: A or B = not((not A) and (not B))
         # This keeps it as a single rule, avoiding cycles with "overriding all"
@@ -272,8 +267,7 @@ class TestQualifiedVariableIntegration:
 
         assert result.is_valid
 
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         # Check has relationships
         assert len(program.has_relationships) == 4
@@ -334,8 +328,7 @@ class TestQualifiedVariableEdgeCases:
             and ?status of ?patient is "active"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         rule = program.strict_rules[0]
         assert len(rule.body) == 3
@@ -368,8 +361,7 @@ class TestQualifiedVariableEdgeCases:
             when ?status of ?patient is "stable"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
 
         # Should have one defeasible rule
         assert len(program.defeasible_rules) == 1
@@ -421,8 +413,7 @@ class TestQualifiedVariablePrologOutput:
             when ?status of ?patient is "critical"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         # Check that qualified variable is formatted as child_of_parent
@@ -441,8 +432,7 @@ class TestQualifiedVariablePrologOutput:
             and ?status of ?doctor is "on_duty"
         """
         ast = parse_string(dsl)
-        translator = DeLPTranslator()
-        program = translator.translate(ast)
+        program = translate_to_fol(ast)
         prolog_str = program.to_prolog_string()
 
         assert "status_of_patient" in prolog_str
